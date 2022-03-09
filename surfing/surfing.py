@@ -20,9 +20,9 @@ rank = comm.rank
 L = 5; H = 1;
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("mesh/mesh_surfing_fine.xdmf") as infile: #mesh_surfing_very_fine #coarse #test is finest
+with XDMFFile("mesh/mesh_1.xdmf") as infile: #mesh_surfing_very_fine #coarse #test is finest
     infile.read(mesh)
-num_computation = 3
+num_computation = 1
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
 
@@ -31,9 +31,10 @@ kappa = (3-nu)/(1+nu)
 mu = 0.5*E/(1+nu)
 Gc = Constant(1.5)
 K1 = Constant(1.)
-ell = Constant(2*cell_size) #cell_size
+ell = Constant(3*cell_size) #cell_size
+#print(2/3*float(ell))
 print(float(ell))
-sys.exit()
+#sys.exit()
 
 boundaries = MeshFunction("size_t", mesh,1)
 boundaries.set_all(0)
@@ -253,11 +254,6 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
             sys.exit()
         alpha.vector()[:] = xv
         alpha.vector().apply('insert')
-
-        #img = plot(alpha)
-        #plt.colorbar(img)
-        #plt.show()
-
         
         alpha_error.vector()[:] = alpha.vector() - alpha_0.vector()
         alpha_error.vector().apply('insert')
@@ -416,12 +412,8 @@ lb.vector().apply('insert')
 def LHS():
     LHS = inner(b(alpha)*sigma_0(du), eps(v)) * dx
     LHS += -inner(dot(w_avg(du,alpha),n('+')), jump(v))*dS + inner(dot(w_avg(v,alpha),n('+')), jump(du))*dS
-    #LHS += -inner(dot(avg(b(alpha)*sigma_0(du)),n('+')), jump(v))*dS# + inner(dot(avg(b(alpha)*sigma_0(v)),n('+')), jump(du))*dS
     LHS += pen_value/h_avg * pen(alpha) * inner(jump(du), jump(v))*dS
     return LHS
-    #LHS = assemble(LHS)
-    #bc_u.apply(LHS)
-    #return as_backend_type(LHS).mat()
 
 def RHS():
     RHS = interpolate(Constant((0,0)), V_u).vector()
