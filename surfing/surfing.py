@@ -9,7 +9,6 @@ plt.rcParams['image.cmap'] = 'viridis'
 import sys, os, sympy, shutil, math
 parameters["form_compiler"].update({"optimize": True, "cpp_optimize": True, "representation":"uflacs", "quadrature_degree": 2})
 parameters['ghost_mode'] = 'shared_facet'
-#parameters["allow_extrapolation"] = True
 import petsc4py
 petsc4py.init(sys.argv)
 from petsc4py import PETSc
@@ -91,6 +90,8 @@ Gc_eff = Gc * (1 + cell_size/(ell*float(c_w)))
 
 # Create function space for 2D elasticity + Damage
 V_u = VectorFunctionSpace(mesh, "DG", 1) #DG
+if rank == 0:
+    print('nb dof in disp': V_u.dim())
 
 # Define the function, test and trial fields
 u, du, v = Function(V_u, name='disp'), TrialFunction(V_u), TestFunction(V_u)
@@ -141,16 +142,8 @@ total_energy =  dissipated_energy + elastic_energy #+ penalty_energy
 elastic = derivative(elastic_energy,u,v)
 elastic = replace(elastic,{u:du})
 XX,bb = as_backend_type(assemble(elastic)).mat().getVecs()
-#Writing LHS for disp
-#inner_pen = pen_value/h_avg * pen(alpha) * inner(jump(du), jump(a(alpha)*v))*dS
-#consistency = -inner(dot(w_avg(du,alpha),n('+')), jump(v))*dS + inner(dot(w_avg(v,alpha),n('+')), jump(du))*dS
-
-##Other elastic term
-#elastic = inner(b(alpha)*sigma_0(du), eps(v)) * dx
-#aux = as_backend_type(assemble(elastic)).mat()                           
 
 # First and second directional derivative wrt alpha
-#E_alpha = inner(sigma_0(u), eps(u)) * project(alpha, V_beta) * project(beta, V_beta) * dx + Gc/float(c_w)*ell*dot(grad(alpha), grad(beta))*dx
 E_alpha = derivative(total_energy,alpha,beta)
 E_alpha_alpha = derivative(E_alpha,alpha,dalpha) 
 
@@ -158,7 +151,6 @@ E_alpha_alpha = derivative(E_alpha,alpha,dalpha)
 bcalpha_0 = DirichletBC(V_alpha, 0.0, boundaries, 1)
 bcalpha_1 = DirichletBC(V_alpha, Constant(1.0), boundaries, 2) #crack lips
 bc_alpha = [bcalpha_0, bcalpha_1]
-
 
 class DamageProblem():
 
@@ -213,34 +205,20 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
     solver_alpha.setVariableBounds(lb.vector().vec(),ub.vector().vec())
     en_old = 1e10
     # iteration loop
-    while err_alpha>tol and iter<maxiter:
-        #test with fenics
-        #LHS = inner(b(alpha)*sigma_0(du), eps(v)) * dx
-        problem_u = LinearVariationalProblem(LHS(), rhs(elastic), u, bc_u)
-        solver_u = LinearVariationalSolver(problem_u)
-        solver_u.parameters.update({"linear_solver" : "mumps"})
-        solver_u.solve()
-
-        #file_u << (u,0)
-        #sys.exit()
-
-        #img = plot(u[1])
-        #plt.colorbar(img)
-        #plt.show()
-        
+    while err_alpha>tol and iter<maxiter:       
         # solve elastic problem
-        #solver_u.setOperators(LHS())
-        #XX = u.copy(deepcopy=True)
-        #XV = as_backend_type(XX.vector()).vec()
-        #solver_u.solve(RHS(),XV)
-        #try:
-        #    assert solver_u.getConvergedReason() > 0
-        #except AssertionError:
-        #    if rank == 0:
-        #        print('Error in solver_u: %i' % solver_u.getConvergedReason())
-        #    sys.exit()
-        #u.vector()[:] = XV
-        #u.vector().apply('insert')
+        solver_u.setOperators(LHS())
+        XX = u.copy(deepcopy=True)
+        XV = as_backend_type(XX.vector()).vec()
+        solver_u.solve(RHS(),XV)
+        try:
+            assert solver_u.getConvergedReason() > 0
+        except AssertionError:
+            if rank == 0:
+                print('Error in solver_u: %i' % solver_u.getConvergedReason())
+            sys.exit()
+        u.vector()[:] = XV
+        u.vector().apply('insert')
 
         #solving damage problem
         xx = alpha.copy(deepcopy=True)
@@ -254,7 +232,6 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
             sys.exit()
         alpha.vector()[:] = xv
         alpha.vector().apply('insert')
-        
         alpha_error.vector()[:] = alpha.vector() - alpha_0.vector()
         alpha_error.vector().apply('insert')
         err_alpha = norm(alpha_error.vector(),"linf")
@@ -262,14 +239,11 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
         #monitor the results
         elastic_en = assemble(elastic_energy)
         surface_en = assemble(dissipated_energy)
-        #penalty_en = assemble(0.5*pen_value/h_avg * avg(a(alpha)) * inner(jump(u), jump(u))*dS)
-        en = elastic_en + surface_en# + penalty_en
-        #assert en < en_old
+        en = elastic_en + surface_en
         en_old = en
         if rank == 0:
             print("Iteration:  %2d, Error: %2.8g, Energy: %2.8g" %(iter, err_alpha, en))
         # update iteration
-        #alpha_0.assign(alpha)
         alpha_0.vector()[:] = alpha.vector()
         alpha_0.vector().apply('insert')
         iter=iter+1
@@ -400,20 +374,22 @@ lb.vector()[:] = alpha.vector() #irreversibility
 lb.vector().apply('insert')
 #file_alpha << (alpha,0)
 
-##test
-#solver_u = PETSc.KSP()
-#solver_u.create(comm)
-##PETScOptions.set("ksp_monitor")
-#solver_u.setType('gmres')
-#solver_u.getPC().setType('bjacobi') #bjacobi 'lu'
-#solver_u.setTolerances(rtol=1e-5,atol=1e-8) #rtol=1e-8
-#solver_u.setFromOptions()
+#test
+solver_u = PETSc.KSP()
+solver_u.create(comm)
+#PETScOptions.set("ksp_monitor")
+solver_u.setType('preonly')
+solver_u.getPC().setType('lu') #bjacobi 'lu'
+solver_u.setTolerances(rtol=1e-5,atol=1e-8) #rtol=1e-8
+solver_u.setFromOptions()
 
 def LHS():
     LHS = inner(b(alpha)*sigma_0(du), eps(v)) * dx
     LHS += -inner(dot(w_avg(du,alpha),n('+')), jump(v))*dS + inner(dot(w_avg(v,alpha),n('+')), jump(du))*dS
     LHS += pen_value/h_avg * pen(alpha) * inner(jump(du), jump(v))*dS
-    return LHS
+    LHS = assemble(LHS)
+    bc_u.apply(LHS)
+    return as_backend_type(LHS).mat()
 
 def RHS():
     RHS = interpolate(Constant((0,0)), V_u).vector()
