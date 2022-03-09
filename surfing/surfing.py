@@ -393,7 +393,7 @@ def postprocessing(num,Nsteps):
     
 
 T = 1 #final simulation time
-dt = cell_size #should be h more ore less
+dt = cell_size / 5 #should be h more ore less
 
 #Starting with crack lips already broken
 aux = np.zeros_like(alpha.vector().get_local())
