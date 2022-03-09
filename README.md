@@ -16,4 +16,10 @@ This software is free software, distributed under the 2-clause BSD license. A co
 }
 ```
 
+The last release: 
+
+[![DOI](https://zenodo.org/badge/327956128.svg)](https://zenodo.org/badge/latestdoi/327956128)
+
+
+
 This software relies on FEniCS and has been proof tested with Fenics 2019.1.0.
