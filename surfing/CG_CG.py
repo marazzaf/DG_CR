@@ -54,7 +54,6 @@ crack.mark(boundaries, 2)
 
 #To impose alpha=1 on crack
 V_alpha = FunctionSpace(mesh, 'CR', 1) #'CR'
-sys.exit()
 V_beta = FunctionSpace(mesh, 'DG', 0) #test
 v = TestFunction(V_alpha)
 A = FacetArea(mesh)
@@ -87,7 +86,6 @@ def sigma(u,alpha):
 z = sympy.Symbol("z")
 c_w = 4*sympy.integrate(sympy.sqrt(w(z)),(z,0,1))
 Gc_eff = Gc * (1 + cell_size/(ell*float(c_w)))
-sys.exit()
 
 # Create function space for 2D elasticity + Damage
 V_u = VectorFunctionSpace(mesh, "DG", 1) #DG
@@ -176,7 +174,7 @@ class DamageProblem():
 
 pb_alpha = DamageProblem()
 solver_alpha = PETSc.SNES().create(comm)
-PETScOptions.set("snes_monitor")
+#PETScOptions.set("snes_monitor")
 solver_alpha.setTolerances(rtol=1e-5,atol=1e-7) #,max_it=2000)
 solver_alpha.setType('vinewtonrsls')
 mtf = Function(V_alpha).vector()
@@ -189,7 +187,6 @@ solver_alpha.getKSP().setTolerances(rtol=1e-8) #rtol=1e-6, atol=1e-8)
 solver_alpha.getKSP().setFromOptions()
 solver_alpha.setFromOptions()
 #solver_alpha.view()
-sys.exit()
 
 
 lb = interpolate(Constant("0."), V_alpha) # lower bound, initialize to 0
@@ -399,6 +396,10 @@ def RHS():
 load_steps = np.arange(0.3, T+dt, dt) #normal start: 0.2
 N_steps = len(load_steps)
 
+func = project(BC(), V_u)
+print(errornorm(u, func, 'l2'))
+sys.exit()
+
 for (i,t) in enumerate(load_steps):
     r.t = t
 
@@ -407,6 +408,7 @@ for (i,t) in enumerate(load_steps):
     
     # solve alternate minimization
     alternate_minimization(u,alpha,maxiter=500,tol=1e-4)
+    func = project(BC(), V_u)
     print(errornorm(u, BC(), 'l2'))
     
     # updating the lower bound to account for the irreversibility
