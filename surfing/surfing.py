@@ -33,7 +33,7 @@ K1 = Constant(1.)
 ell = Constant(3*cell_size) #cell_size
 #print(2/3*float(ell))
 print(float(ell))
-#sys.exit()
+sys.exit()
 
 boundaries = MeshFunction("size_t", mesh,1)
 boundaries.set_all(0)
@@ -91,7 +91,7 @@ Gc_eff = Gc * (1 + cell_size/(ell*float(c_w)))
 # Create function space for 2D elasticity + Damage
 V_u = VectorFunctionSpace(mesh, "DG", 1) #DG
 if rank == 0:
-    print('nb dof in disp': V_u.dim())
+    print('nb dof in disp: %i' % V_u.dim())
 
 # Define the function, test and trial fields
 u, du, v = Function(V_u, name='disp'), TrialFunction(V_u), TestFunction(V_u)
@@ -125,7 +125,6 @@ def w_avg(disp,dam):
     tot = lumped('+')+lumped('-')
     w1 = lumped('+') / tot
     w2 = lumped('-') / tot
-    #return 0.5*(prod('+') + prod('-'))
     return w1*prod('+') + w2*prod('-')
 
 def pen(alpha):
@@ -183,7 +182,7 @@ mtf = Function(V_alpha).vector()
 solver_alpha.setFunction(pb_alpha.F, mtf.vec())
 A = PETScMatrix()
 solver_alpha.setJacobian(pb_alpha.J, A.mat())
-solver_alpha.getKSP().setType('cg')
+solver_alpha.getKSP().setType('preonly') #preonly #cg
 solver_alpha.getKSP().getPC().setType('lu') #bjacobi 'lu'
 solver_alpha.getKSP().setTolerances(rtol=1e-8) #rtol=1e-6, atol=1e-8)
 solver_alpha.getKSP().setFromOptions()
@@ -407,6 +406,7 @@ for (i,t) in enumerate(load_steps):
     
     # solve alternate minimization
     alternate_minimization(u,alpha,maxiter=500,tol=1e-4)
+    print(errornorm(u, BC(), 'l2'))
     
     # updating the lower bound to account for the irreversibility
     lb.vector()[:] = alpha.vector()
