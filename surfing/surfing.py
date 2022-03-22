@@ -31,9 +31,8 @@ mu = 0.5*E/(1+nu)
 Gc = Constant(1.5)
 K1 = Constant(1.)
 ell = Constant(3*cell_size) #cell_size
-#print(2/3*float(ell))
-print(float(ell))
-sys.exit()
+print('\ell: %.3e' % float(ell))
+#sys.exit()
 
 boundaries = MeshFunction("size_t", mesh,1)
 boundaries.set_all(0)
@@ -55,6 +54,7 @@ crack.mark(boundaries, 2)
 
 #To impose alpha=1 on crack
 V_alpha = FunctionSpace(mesh, 'CR', 1) #'CR'
+sys.exit()
 V_beta = FunctionSpace(mesh, 'DG', 0) #test
 v = TestFunction(V_alpha)
 A = FacetArea(mesh)
@@ -87,6 +87,7 @@ def sigma(u,alpha):
 z = sympy.Symbol("z")
 c_w = 4*sympy.integrate(sympy.sqrt(w(z)),(z,0,1))
 Gc_eff = Gc * (1 + cell_size/(ell*float(c_w)))
+sys.exit()
 
 # Create function space for 2D elasticity + Damage
 V_u = VectorFunctionSpace(mesh, "DG", 1) #DG
@@ -175,7 +176,7 @@ class DamageProblem():
 
 pb_alpha = DamageProblem()
 solver_alpha = PETSc.SNES().create(comm)
-#PETScOptions.set("snes_monitor")
+PETScOptions.set("snes_monitor")
 solver_alpha.setTolerances(rtol=1e-5,atol=1e-7) #,max_it=2000)
 solver_alpha.setType('vinewtonrsls')
 mtf = Function(V_alpha).vector()
@@ -188,7 +189,7 @@ solver_alpha.getKSP().setTolerances(rtol=1e-8) #rtol=1e-6, atol=1e-8)
 solver_alpha.getKSP().setFromOptions()
 solver_alpha.setFromOptions()
 #solver_alpha.view()
-#sys.exit()
+sys.exit()
 
 
 lb = interpolate(Constant("0."), V_alpha) # lower bound, initialize to 0
