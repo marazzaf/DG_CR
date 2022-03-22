@@ -31,6 +31,7 @@ mu = 0.5*E/(1+nu)
 Gc = Constant(1.5)
 K1 = Constant(1.)
 ell = Constant(3*cell_size) #cell_size
+ell = Constant(3.7e-2) #just for a test
 print('\ell: %.3e' % float(ell))
 #sys.exit()
 
@@ -91,6 +92,7 @@ Gc_eff = Gc * (1 + cell_size/(ell*float(c_w)))
 V_u = VectorFunctionSpace(mesh, "DG", 1) #DG
 if rank == 0:
     print('nb dof in disp: %i' % V_u.dim())
+#sys.exit()
 
 # Define the function, test and trial fields
 u, du, v = Function(V_u, name='disp'), TrialFunction(V_u), TestFunction(V_u)
@@ -396,10 +398,6 @@ def RHS():
 load_steps = np.arange(0.3, T+dt, dt) #normal start: 0.2
 N_steps = len(load_steps)
 
-func = project(BC(), V_u)
-print(errornorm(u, func, 'l2'))
-sys.exit()
-
 for (i,t) in enumerate(load_steps):
     r.t = t
 
@@ -409,7 +407,8 @@ for (i,t) in enumerate(load_steps):
     # solve alternate minimization
     alternate_minimization(u,alpha,maxiter=500,tol=1e-4)
     func = project(BC(), V_u)
-    print(errornorm(u, BC(), 'l2'))
+    print(errornorm(u, func, 'h1')) #h1? #h10? #l2?
+    sys.exit()
     
     # updating the lower bound to account for the irreversibility
     lb.vector()[:] = alpha.vector()

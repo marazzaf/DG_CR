@@ -19,7 +19,7 @@ rank = comm.rank
 L = 5; H = 1;
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("mesh/mesh_1.xdmf") as infile: #mesh_surfing_very_fine #coarse #test is finest
+with XDMFFile("mesh/mesh_1b.xdmf") as infile: #mesh_surfing_very_fine #coarse #test is finest
     infile.read(mesh)
 num_computation = 1
 cell_size = mesh.hmax()
@@ -30,7 +30,7 @@ kappa = (3-nu)/(1+nu)
 mu = 0.5*E/(1+nu)
 Gc = Constant(1.5)
 K1 = Constant(1.)
-ell = Constant(3*cell_size) #cell_size
+ell = Constant(3*cell_size)
 print('\ell: %.3e' % float(ell))
 #sys.exit()
 
@@ -88,9 +88,10 @@ c_w = 4*sympy.integrate(sympy.sqrt(w(z)),(z,0,1))
 Gc_eff = Gc * (1 + cell_size/(ell*float(c_w)))
 
 # Create function space for 2D elasticity + Damage
-V_u = VectorFunctionSpace(mesh, "DG", 1) #DG
+V_u = VectorFunctionSpace(mesh, "CG", 1)
 if rank == 0:
     print('nb dof in disp: %i' % V_u.dim())
+#sys.exit()
 
 # Define the function, test and trial fields
 u, du, v = Function(V_u, name='disp'), TrialFunction(V_u), TestFunction(V_u)
@@ -112,30 +113,11 @@ def BC():
     s_theta_2 = sqrt(0.5 * (1-c_theta)) * sign(x[1])
     return  K1/(2*mu) * sqrt(r/(2*np.pi)) * (kappa - c_theta) * as_vector((c_theta_2,s_theta_2)) #condition de bord de Dirichlet en disp
 
-#Writing LHS for disp
-def b(alpha):
-    test = Expression('pow(1-alpha,2)+k', degree = 2, alpha=alpha, k=Constant(1.e-6))
-    return interpolate(test, V_beta) #V_alpha #V_beta
-
-def w_avg(disp,dam):
-    sig = sigma_0(disp)
-    lumped = b(dam)
-    prod = lumped * sig
-    tot = lumped('+')+lumped('-')
-    w1 = lumped('+') / tot
-    w2 = lumped('-') / tot
-    return w1*prod('+') + w2*prod('-')
-
-def pen(alpha):
-    lumped = b(alpha)
-    #return 0.5*(lumped('+')+lumped('-'))
-    return 2*lumped('+')*lumped('-') / (lumped('+')+lumped('-'))
-    
 #Energies
 pen_value = 2*mu
 dissipated_energy = Gc/float(c_w)*(w(alpha)/ell + ell*dot(grad(alpha), grad(alpha)))*dx
 elastic_energy = 0.5*inner(sigma(u,alpha), eps(u)) * dx
-total_energy =  dissipated_energy + elastic_energy #+ penalty_energy
+total_energy =  dissipated_energy + elastic_energy
 ##Associated bilinear forms
 elastic = derivative(elastic_energy,u,v)
 elastic = replace(elastic,{u:du})
@@ -332,7 +314,7 @@ def calc_gtheta():
     Gamma_value = assemble(Gamma*dxx(1))
     return Gstat_value,Gamma_value
 
-savedir = "DG_CR_%i" % num_computation    
+savedir = "CG_CG_%i" % num_computation    
 file_alpha = File(savedir+"/alpha.pvd") 
 file_u = File(savedir+"/u.pvd")
 energies = []
@@ -381,9 +363,7 @@ solver_u.setTolerances(rtol=1e-5,atol=1e-8) #rtol=1e-8
 solver_u.setFromOptions()
 
 def LHS():
-    LHS = inner(b(alpha)*sigma_0(du), eps(v)) * dx
-    LHS += -inner(dot(w_avg(du,alpha),n('+')), jump(v))*dS + inner(dot(w_avg(v,alpha),n('+')), jump(du))*dS
-    LHS += pen_value/h_avg * pen(alpha) * inner(jump(du), jump(v))*dS
+    LHS = inner(a(alpha)*sigma_0(du), eps(v)) * dx
     LHS = assemble(LHS)
     bc_u.apply(LHS)
     return as_backend_type(LHS).mat()
@@ -396,10 +376,6 @@ def RHS():
 load_steps = np.arange(0.3, T+dt, dt) #normal start: 0.2
 N_steps = len(load_steps)
 
-func = project(BC(), V_u)
-print(errornorm(u, func, 'l2'))
-sys.exit()
-
 for (i,t) in enumerate(load_steps):
     r.t = t
 
@@ -409,7 +385,8 @@ for (i,t) in enumerate(load_steps):
     # solve alternate minimization
     alternate_minimization(u,alpha,maxiter=500,tol=1e-4)
     func = project(BC(), V_u)
-    print(errornorm(u, BC(), 'l2'))
+    print(errornorm(u, func, 'h1')) #l2?
+    sys.exit()
     
     # updating the lower bound to account for the irreversibility
     lb.vector()[:] = alpha.vector()
