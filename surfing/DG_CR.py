@@ -31,8 +31,9 @@ mu = 0.5*E/(1+nu)
 Gc = Constant(1.5)
 K1 = Constant(1.)
 ell = Constant(3*cell_size) #cell_size
-ell = Constant(3.7e-2) #just for a test
-print('\ell: %.3e' % float(ell))
+#ell = Constant(3.5e-2) #just for a test
+if rank == 0:
+    print('\ell: %.3e' % float(ell))
 #sys.exit()
 
 boundaries = MeshFunction("size_t", mesh,1)
@@ -91,7 +92,8 @@ Gc_eff = Gc * (1 + cell_size/(ell*float(c_w)))
 # Create function space for 2D elasticity + Damage
 V_u = VectorFunctionSpace(mesh, "DG", 1) #DG
 if rank == 0:
-    print('nb dof in disp: %i' % V_u.dim())
+    #print('nb dof in disp: %i' % V_u.dim())
+    print('nb dof total: %i' % (V_u.dim()+V_alpha.dim()))
 #sys.exit()
 
 # Define the function, test and trial fields
@@ -199,12 +201,12 @@ for bc in bc_alpha:
 
 def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Constant("0.0"), V_alpha)):
     # initialization
-    iter = 1; err_alpha = 1
+    it = 1; err_alpha = 1
     alpha_error = Function(V_alpha)
     solver_alpha.setVariableBounds(lb.vector().vec(),ub.vector().vec())
     en_old = 1e10
     # iteration loop
-    while err_alpha>tol and iter<maxiter:       
+    while err_alpha>tol and it<maxiter:       
         # solve elastic problem
         solver_u.setOperators(LHS())
         XX = u.copy(deepcopy=True)
@@ -241,13 +243,13 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
         en = elastic_en + surface_en
         en_old = en
         if rank == 0:
-            print("Iteration:  %2d, Error: %2.8g, Energy: %2.8g" %(iter, err_alpha, en))
+            print("Iteration:  %2d, Error: %2.8g, Energy: %2.8g" %(it, err_alpha, en))
         # update iteration
         alpha_0.vector()[:] = alpha.vector()
         alpha_0.vector().apply('insert')
-        iter=iter+1
-        assert iter < maxiter
-    return (err_alpha, iter)
+        it = it+1
+        
+    return (err_alpha, it)
 
 #To get the Gh
 V_theta = VectorFunctionSpace(mesh, "CG", 1)
@@ -339,6 +341,7 @@ file_alpha = File(savedir+"/alpha.pvd")
 file_u = File(savedir+"/u.pvd")
 energies = []
 save_energies = open(savedir+'/energies.txt', 'w', 1)
+perf = open(savedir+'/perf.txt', 'w', 1)
 
 def postprocessing(num,Nsteps):
     # Dump solution to file
@@ -405,10 +408,13 @@ for (i,t) in enumerate(load_steps):
     bc_u =  DirichletBC(V_u, BC(), boundaries, 1, method='geometric')
     
     # solve alternate minimization
-    alternate_minimization(u,alpha,maxiter=500,tol=1e-4)
+    err,it = alternate_minimization(u,alpha,maxiter=500,tol=1e-4)
+    #Perf measure
     func = project(BC(), V_u)
-    print(errornorm(u, func, 'h1')) #h1? #h10? #l2?
-    sys.exit()
+    err = errornorm(u, func, 'h1') #h1? #h10? #l2?
+    err_l2 = errornorm(u, func, 'l2')
+    if rank == 0:
+        perf.write('%i %.3e %.3e\n' % (it, err_l2, err)) 
     
     # updating the lower bound to account for the irreversibility
     lb.vector()[:] = alpha.vector()
