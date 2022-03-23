@@ -19,7 +19,7 @@ rank = comm.rank
 L = 5; H = 1;
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("mesh/mesh_1.xdmf") as infile: #mesh_surfing_very_fine #coarse #test is finest
+with XDMFFile("mesh/mesh_1c.xdmf") as infile: #mesh_surfing_very_fine #coarse #test is finest
     infile.read(mesh)
 num_computation = 1
 cell_size = mesh.hmax()
