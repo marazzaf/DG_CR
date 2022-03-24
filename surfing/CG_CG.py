@@ -165,7 +165,7 @@ solver_alpha.setFunction(pb_alpha.F, mtf.vec())
 A = PETScMatrix()
 solver_alpha.setJacobian(pb_alpha.J, A.mat())
 solver_alpha.getKSP().setType('cg') #preonly #cg
-solver_alpha.getKSP().getPC().setType('gamg') #bjacobi 'lu'
+solver_alpha.getKSP().getPC().setType('hypre') #gamg 'lu' hypre
 solver_alpha.getKSP().setTolerances(rtol=1e-8) #rtol=1e-6, atol=1e-8)
 solver_alpha.getKSP().setFromOptions()
 solver_alpha.setFromOptions()
@@ -360,8 +360,8 @@ solver_u = PETSc.KSP()
 solver_u.create(comm)
 PETScOptions.set("ksp_monitor")
 solver_u.setType('cg')
-solver_u.getPC().setType('gamg') #bjacobi 'lu'
-solver_u.setTolerances(rtol=1e-5,atol=1e-8) #rtol=1e-8
+solver_u.getPC().setType('hypre') #gamg lu hypre
+solver_u.setTolerances(rtol=1e-5,atol=1e-8, max_it=100) #rtol=1e-8
 solver_u.setFromOptions()
 
 def LHS():
