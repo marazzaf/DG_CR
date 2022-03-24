@@ -358,7 +358,7 @@ lb.vector().apply('insert')
 #test
 solver_u = PETSc.KSP()
 solver_u.create(comm)
-PETScOptions.set("ksp_monitor")
+#PETScOptions.set("ksp_monitor")
 solver_u.setType('cg')
 solver_u.getPC().setType('hypre') #gamg lu hypre
 solver_u.setTolerances(rtol=1e-5,atol=1e-8, max_it=100) #rtol=1e-8

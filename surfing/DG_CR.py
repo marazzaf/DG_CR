@@ -185,8 +185,8 @@ mtf = Function(V_alpha).vector()
 solver_alpha.setFunction(pb_alpha.F, mtf.vec())
 A = PETScMatrix()
 solver_alpha.setJacobian(pb_alpha.J, A.mat())
-solver_alpha.getKSP().setType('preonly') #preonly #cg
-solver_alpha.getKSP().getPC().setType('lu') #bjacobi 'lu'
+solver_alpha.getKSP().setType('cg') #preonly #cg
+solver_alpha.getKSP().getPC().setType('hypre') #bjacobi 'lu'
 solver_alpha.getKSP().setTolerances(rtol=1e-8) #rtol=1e-6, atol=1e-8)
 solver_alpha.getKSP().setFromOptions()
 solver_alpha.setFromOptions()
@@ -380,8 +380,8 @@ lb.vector().apply('insert')
 solver_u = PETSc.KSP()
 solver_u.create(comm)
 #PETScOptions.set("ksp_monitor")
-solver_u.setType('preonly')
-solver_u.getPC().setType('lu') #bjacobi 'lu'
+solver_u.setType('gmres')
+solver_u.getPC().setType('gamg') #gamg 'lu'
 solver_u.setTolerances(rtol=1e-5,atol=1e-8) #rtol=1e-8
 solver_u.setFromOptions()
 
