@@ -6,7 +6,7 @@ import numpy as np
 import time
 from ufl import sign,replace
 import sys, os, sympy, shutil, math
-parameters["form_compiler"].update({"optimize": True, "cpp_optimize": True, "representation":"uflacs", "quadrature_degree": 3})
+parameters["form_compiler"].update({"optimize": True, "cpp_optimize": True, "representation":"uflacs", "quadrature_degree": 2})
 parameters['ghost_mode'] = 'shared_facet'
 #parameters["allow_extrapolation"] = True
 import petsc4py
@@ -203,8 +203,8 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
 solver_u = PETSc.KSP()
 solver_u.create(comm)
 PETScOptions.set("ksp_monitor")
-solver_u.setType('preonly') #preonly
-solver_u.getPC().setType('lu') #try it? #'bjacobi' #'lu'
+solver_u.setType('cg') #preonly
+solver_u.getPC().setType('hypre') #try it? #'bjacobi' #'lu'
 solver_u.setTolerances(rtol=1e-5,atol=1e-8,max_it=100) #rtol=1e-5,max_it=2000 #rtol=1e-3
 solver_u.setFromOptions()
 
