@@ -6,7 +6,7 @@ import numpy as np
 import time
 from ufl import sign,replace
 import sys, os, sympy, shutil, math
-parameters["form_compiler"].update({"optimize": True, "cpp_optimize": True, "representation":"uflacs", "quadrature_degree": 2})
+parameters["form_compiler"].update({"optimize": True, "cpp_optimize": True, "representation":"uflacs", "quadrature_degree": 3})
 parameters['ghost_mode'] = 'shared_facet'
 #parameters["allow_extrapolation"] = True
 import petsc4py
@@ -134,8 +134,8 @@ bb = Function(V_alpha).vector()
 solver_alpha.setFunction(pb_alpha.F, bb.vec())
 A = PETScMatrix()
 solver_alpha.setJacobian(pb_alpha.J, A.mat())
-solver_alpha.getKSP().setType('preonly')
-solver_alpha.getKSP().getPC().setType('lu') #'bjacobi' #'lu'
+solver_alpha.getKSP().setType('cg') #preonly #cg
+solver_alpha.getKSP().getPC().setType('gamg') #'bjacobi' #'lu'
 solver_alpha.getKSP().setTolerances(rtol=1e-6, atol=1e-8, max_it=4000) #rtol=1e-8
 solver_alpha.getKSP().setFromOptions()
 solver_alpha.setFromOptions()
@@ -202,14 +202,14 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
 #Setting up solver in disp
 solver_u = PETSc.KSP()
 solver_u.create(comm)
-#PETScOptions.set("ksp_monitor")
-solver_u.setType('preonly')
+PETScOptions.set("ksp_monitor")
+solver_u.setType('preonly') #preonly
 solver_u.getPC().setType('lu') #try it? #'bjacobi' #'lu'
-solver_u.setTolerances(rtol=1e-5,atol=1e-8,max_it=5000) #rtol=1e-5,max_it=2000 #rtol=1e-3
+solver_u.setTolerances(rtol=1e-5,atol=1e-8,max_it=100) #rtol=1e-5,max_it=2000 #rtol=1e-3
 solver_u.setFromOptions()
 
 def LHS():
-    LHS = inner(a(alpha)*sigma_0(du), eps(v)) * dx
+    LHS = inner(sigma(du,alpha), eps(v)) * dx
     LHS = assemble(LHS)
     for bc in bc_u:
         bc.apply(LHS)
