@@ -17,7 +17,7 @@ comm = MPI.comm_world
 rank = comm.rank
 
 L = 1; H = 0.1;
-n_elt = 80 #20
+n_elt = 20 #20 #100 #ok gmres but not lu
 #Gmsh mesh.
 mesh = RectangleMesh(Point(0, -H/2), Point(L,H/2), n_elt*10, n_elt, "crossed")
 cell_size = H / n_elt
@@ -161,8 +161,8 @@ bb = Function(V_alpha).vector()
 solver_alpha.setFunction(pb_alpha.F, bb.vec())
 A = PETScMatrix()
 solver_alpha.setJacobian(pb_alpha.J, A.mat())
-solver_alpha.getKSP().setType('cg') #preonly
-solver_alpha.getKSP().getPC().setType('bjacobi') #'bjacobi' #'lu'
+solver_alpha.getKSP().setType('cg') #preonly #cg
+solver_alpha.getKSP().getPC().setType('gmag') #'gmag' #'lu'
 solver_alpha.getKSP().setTolerances(rtol=1e-6, atol=1e-8, max_it=4000) #rtol=1e-8
 solver_alpha.getKSP().setFromOptions()
 solver_alpha.setFromOptions()
@@ -230,11 +230,11 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
 solver_u = PETSc.KSP()
 solver_u.create(comm)
 #PETScOptions.set("ksp_monitor")
-solver_u.setType('preonly') #preonly #gmres #bcgsl
-solver_u.getPC().setType('lu') #gamg #lu
+solver_u.setType('gmres') #preonly #gmres #bcgsl
+solver_u.getPC().setType('gamg') #gamg #lu
 solver_u.setTolerances(rtol=1e-5,atol=1e-8,max_it=5000) #rtol=1e-5,max_it=2000 #rtol=1e-3
 solver_u.setFromOptions()
-solver_u.getPC().view()
+#solver_u.getPC().view()
 
 def LHS():
     LHS = inner(b(alpha)*sigma_0(du), eps(v)) * dx

@@ -17,7 +17,7 @@ comm = MPI.comm_world
 rank = comm.rank
 
 L = 1; H = 0.1;
-n_elt = 100 #45
+n_elt = 45 #45 #100
 #Gmsh mesh.
 mesh = RectangleMesh(Point(0, -H/2), Point(L,H/2), n_elt*10, n_elt, "crossed")
 cell_size = H / n_elt
