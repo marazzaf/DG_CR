@@ -19,7 +19,7 @@ rank = comm.rank
 L = 5; H = 1;
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("mesh/mesh_1.xdmf") as infile: #mesh_surfing_very_fine #coarse #test is finest
+with XDMFFile("mesh/mesh_2.xdmf") as infile: #mesh_surfing_very_fine #coarse #test is finest
     infile.read(mesh)
 num_computation = 1
 cell_size = mesh.hmax()
@@ -31,7 +31,6 @@ mu = 0.5*E/(1+nu)
 Gc = Constant(1.5)
 K1 = Constant(1.)
 ell = Constant(3*cell_size) #cell_size
-#ell = Constant(3.5e-2) #just for a test
 if rank == 0:
     print('\ell: %.3e' % float(ell))
 #sys.exit()
@@ -39,8 +38,6 @@ if rank == 0:
 boundaries = MeshFunction("size_t", mesh,1)
 boundaries.set_all(0)
 ds = Measure("ds",subdomain_data=boundaries)
-cells_meshfunction = MeshFunction("size_t", mesh, 2)
-dxx = dx(subdomain_data=cells_meshfunction)
 
 class NotCrack(SubDomain):
     def inside(self, x, on_boundary):
@@ -132,7 +129,6 @@ def w_avg(disp,dam):
 
 def pen(alpha):
     lumped = b(alpha)
-    #return 0.5*(lumped('+')+lumped('-'))
     return 2*lumped('+')*lumped('-') / (lumped('+')+lumped('-'))
     
 #Energies
@@ -212,6 +208,7 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
         XX = u.copy(deepcopy=True)
         XV = as_backend_type(XX.vector()).vec()
         solver_u.solve(RHS(),XV)
+        #solve(PETScMatrix(LHS()), u.vector(), PETScVector(RHS()), "gmres", "ilu")
         try:
             assert solver_u.getConvergedReason() > 0
         except AssertionError:
