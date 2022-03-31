@@ -19,7 +19,7 @@ rank = comm.rank
 L = 5; H = 1;
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("mesh/mesh_2.xdmf") as infile: #mesh_surfing_very_fine #coarse #test is finest
+with XDMFFile("mesh/mesh_1.xdmf") as infile: #mesh_surfing_very_fine #coarse #test is finest
     infile.read(mesh)
 num_computation = 1
 cell_size = mesh.hmax()
@@ -249,15 +249,15 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
     return (err_alpha, it)
 
 savedir = "DG_CR_perf_%i" % num_computation    
-file_alpha = File(savedir+"/alpha.pvd") 
-file_u = File(savedir+"/u.pvd")
 perf = open(savedir+'/perf.txt', 'w', 1)
 
-def postprocessing(num,Nsteps):
-    # Dump solution to file
-    if num % (Nsteps//10) == 0:
-        file_alpha << (alpha,r.t)
-        file_u << (u,r.t)
+def postprocessing(num,it):
+    #Perf measure
+    func = project(BC(), V_u)
+    err = errornorm(u, func, 'h1') #h1? #h10? #l2?
+    err_l2 = errornorm(u, func, 'l2')
+    if rank == 0:
+        perf.write('%i %i %.3e %.3e\n' % (num, it, err_l2, err)) 
     
 
 T = 1 #final simulation time
@@ -276,8 +276,8 @@ lb.vector().apply('insert')
 solver_u = PETSc.KSP()
 solver_u.create(comm)
 #PETScOptions.set("ksp_monitor")
-solver_u.setType('gmres')
-solver_u.getPC().setType('ilu') #gamg 'lu'
+solver_u.setType('preonly') #gmres
+solver_u.getPC().setType('lu') #gamg 'lu'
 solver_u.setTolerances(rtol=1e-5,atol=1e-8) #rtol=1e-8
 solver_u.setFromOptions()
 
@@ -305,17 +305,12 @@ for (i,t) in enumerate(load_steps):
     
     # solve alternate minimization
     err,it = alternate_minimization(u,alpha,maxiter=500,tol=1e-4)
-    #Perf measure
-    func = project(BC(), V_u)
-    err = errornorm(u, func, 'h1') #h1? #h10? #l2?
-    err_l2 = errornorm(u, func, 'l2')
-    if rank == 0:
-        perf.write('%i %.3e %.3e\n' % (it, err_l2, err)) 
+    postprocessing(i,it)
     
     # updating the lower bound to account for the irreversibility
     lb.vector()[:] = alpha.vector()
     lb.vector().apply('insert')
-    postprocessing(i,N_steps)
+    
 
 
 save_energies.close()
