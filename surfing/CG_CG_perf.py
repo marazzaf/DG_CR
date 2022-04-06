@@ -19,7 +19,7 @@ rank = comm.rank
 L = 5; H = 1;
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("mesh/mesh_3b.xdmf") as infile: #mesh_surfing_very_fine #coarse #test is finest
+with XDMFFile("mesh/mesh_1b.xdmf") as infile: #mesh_surfing_very_fine #coarse #test is finest
     infile.read(mesh)
 num_computation = 1
 cell_size = mesh.hmax()
@@ -230,7 +230,7 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
         
     return (err_alpha, it)
 
-savedir = "CG_CG_perf_%i" % num_computation    
+savedir = "test_CG_%i" % num_computation    
 perf = open(savedir+'/perf.txt', 'w', 1)
 
 def postprocessing(num,it):
@@ -241,7 +241,7 @@ def postprocessing(num,it):
         perf.write('%i %i %.3e %.3e\n' % (num, it, err_l2, err))
 
 T = 1 #final simulation time
-dt = cell_size / 5 #should be h more ore less
+dt = cell_size# / 5 #should be h more ore less
 
 #Starting with crack lips already broken
 aux = np.zeros_like(alpha.vector().get_local())
@@ -256,9 +256,9 @@ lb.vector().apply('insert')
 solver_u = PETSc.KSP()
 solver_u.create(comm)
 #PETScOptions.set("ksp_monitor")
-solver_u.setType('preonly') #cg
-solver_u.getPC().setType('lu') #lu hypre
-solver_u.setTolerances(rtol=1e-5,atol=1e-8, max_it=100) #rtol=1e-8
+solver_u.setType('cg') #cg
+solver_u.getPC().setType('hypre') #lu hypre
+solver_u.setTolerances(rtol=1e-5,atol=1e-8) #rtol=1e-8
 solver_u.setFromOptions()
 
 def LHS():
@@ -277,6 +277,9 @@ N_steps = len(load_steps)
 
 for (i,t) in enumerate(load_steps):
     r.t = t
+
+    if rank == 0:
+        print('t: %.3f' % t)
 
     #updating BC
     bc_u =  DirichletBC(V_u, BC(), boundaries, 1, method='geometric')

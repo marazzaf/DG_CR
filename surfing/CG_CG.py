@@ -19,7 +19,7 @@ rank = comm.rank
 L = 5; H = 1;
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("mesh/mesh_1b.xdmf") as infile: #mesh_surfing_very_fine #coarse #test is finest
+with XDMFFile("mesh/mesh_1b.xdmf") as infile:
     infile.read(mesh)
 num_computation = 1
 cell_size = mesh.hmax()
@@ -164,8 +164,8 @@ mtf = Function(V_alpha).vector()
 solver_alpha.setFunction(pb_alpha.F, mtf.vec())
 A = PETScMatrix()
 solver_alpha.setJacobian(pb_alpha.J, A.mat())
-solver_alpha.getKSP().setType('preonly') #preonly #cg
-solver_alpha.getKSP().getPC().setType('lu') #hypre
+solver_alpha.getKSP().setType('cg') #preonly #cg
+solver_alpha.getKSP().getPC().setType('hypre') #hypre
 solver_alpha.getKSP().setTolerances(rtol=1e-8) #rtol=1e-6, atol=1e-8)
 solver_alpha.getKSP().setFromOptions()
 solver_alpha.setFromOptions()
@@ -315,18 +315,18 @@ def calc_gtheta():
     Gamma_value = assemble(Gamma*dxx(1))
     return Gstat_value,Gamma_value
 
-savedir = "CG_CG_%i" % num_computation    
+savedir = "test_CG_%i" % num_computation    
 file_alpha = File(savedir+"/alpha.pvd") 
 file_u = File(savedir+"/u.pvd")
 energies = []
 save_energies = open(savedir+'/energies.txt', 'w', 1)
-perf = open(savedir+'/perf.txt', 'w', 1)
+#perf = open(savedir+'/perf.txt', 'w', 1)
 
 def postprocessing(num,Nsteps):
     # Dump solution to file
-    if num % (Nsteps//10) == 0:
-        file_alpha << (alpha,r.t)
-        file_u << (u,r.t)
+    #if num % (Nsteps//10) == 0:
+    file_alpha << (alpha,r.t)
+    file_u << (u,r.t)
 
     #Energies
     elastic_energy_value = assemble(elastic_energy)
@@ -344,7 +344,7 @@ def postprocessing(num,Nsteps):
     
 
 T = 1 #final simulation time
-dt = cell_size / 5 #should be h more ore less
+dt = cell_size# / 5 #should be h more ore less
 
 #Starting with crack lips already broken
 aux = np.zeros_like(alpha.vector().get_local())
@@ -353,15 +353,14 @@ alpha.vector().set_local(aux)
 alpha.vector().apply('insert')
 lb.vector()[:] = alpha.vector() #irreversibility
 lb.vector().apply('insert')
-#file_alpha << (alpha,0)
 
 #test
 solver_u = PETSc.KSP()
 solver_u.create(comm)
 #PETScOptions.set("ksp_monitor")
-solver_u.setType('preonly') #cg
-solver_u.getPC().setType('lu') #lu hypre
-solver_u.setTolerances(rtol=1e-5,atol=1e-8, max_it=100) #rtol=1e-8
+solver_u.setType('cg') #cg
+solver_u.getPC().setType('hypre') #lu hypre
+solver_u.setTolerances(rtol=1e-5,atol=1e-8) #rtol=1e-8
 solver_u.setFromOptions()
 
 def LHS():
@@ -386,12 +385,12 @@ for (i,t) in enumerate(load_steps):
     
     # solve alternate minimization
     err,it = alternate_minimization(u,alpha,maxiter=500,tol=1e-4)
-    func = project(BC(), V_u)
-    err = errornorm(u, func, 'h1') #h1? #h10? #l2?
-    err_l2 = errornorm(u, func, 'l2')
-    if rank == 0:
-        perf.write('%i %.3e %.3e\n' % (it, err_l2, err))
-    sys.exit()
+    #func = project(BC(), V_u)
+    #err = errornorm(u, func, 'h1') #h1? #h10? #l2?
+    #err_l2 = errornorm(u, func, 'l2')
+    #if rank == 0:
+    #    perf.write('%i %.3e %.3e\n' % (it, err_l2, err))
+    #sys.exit()
     
     # updating the lower bound to account for the irreversibility
     lb.vector()[:] = alpha.vector()
