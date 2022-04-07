@@ -19,9 +19,9 @@ rank = comm.rank
 L = 5; H = 1;
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("mesh/mesh_3.xdmf") as infile: #mesh_surfing_very_fine #coarse #test is finest
+with XDMFFile("mesh/mesh_4.xdmf") as infile: #mesh_surfing_very_fine #coarse #test is finest
     infile.read(mesh)
-num_computation = 3
+num_computation = 4
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
 
@@ -34,7 +34,7 @@ ell = Constant(3*cell_size) #cell_size
 if rank == 0:
     print('\ell: %.3e' % float(ell))
     print(cell_size/5)
-sys.exit()
+#sys.exit()
 
 boundaries = MeshFunction("size_t", mesh,1)
 boundaries.set_all(0)
@@ -92,7 +92,7 @@ V_u = VectorFunctionSpace(mesh, "DG", 1) #DG
 if rank == 0:
     #print('nb dof in disp: %i' % V_u.dim())
     print('nb dof total: %i' % (V_u.dim()+V_alpha.dim()))
-#sys.exit()
+sys.exit()
 
 # Define the function, test and trial fields
 u, du, v = Function(V_u, name='disp'), TrialFunction(V_u), TestFunction(V_u)
