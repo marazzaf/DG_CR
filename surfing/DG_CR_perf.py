@@ -19,9 +19,9 @@ rank = comm.rank
 L = 5; H = 1;
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("mesh/mesh_4.xdmf") as infile: #mesh_surfing_very_fine #coarse #test is finest
+with XDMFFile("mesh/mesh_1.xdmf") as infile:
     infile.read(mesh)
-num_computation = 4
+num_computation = 1
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
 
@@ -92,7 +92,7 @@ V_u = VectorFunctionSpace(mesh, "DG", 1) #DG
 if rank == 0:
     #print('nb dof in disp: %i' % V_u.dim())
     print('nb dof total: %i' % (V_u.dim()+V_alpha.dim()))
-sys.exit()
+#sys.exit()
 
 # Define the function, test and trial fields
 u, du, v = Function(V_u, name='disp'), TrialFunction(V_u), TestFunction(V_u)
@@ -249,20 +249,96 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
         
     return (err_alpha, it)
 
-savedir = "test_DG_%i" % num_computation    
+#To compute the error
+V_theta = FunctionSpace(mesh, "CG", 1)
+theta = Function(V_theta, name="Theta")
+theta_trial = TrialFunction(V_theta)
+theta_test = TestFunction(V_theta)
+
+#to get crack tip coordinates
+xcoor = V_alpha.tabulate_dof_coordinates()
+xcoor = xcoor[:,0]
+
+def find_crack_tip():
+    # Estimate the current crack tip
+    ind = alpha.vector().get_local() > 0.9
+    
+    if ind.any():
+        xmax = xcoor[ind].max()
+    else:
+        xmax = 0.0
+    x0 = MPI.max(comm, xmax)
+
+    return [x0, 0]
+
+solver_theta = PETSc.KSP()
+solver_theta.create(comm)
+solver_theta.setType('cg')
+solver_theta.getPC().setType('hypre')
+solver_theta.setTolerances(rtol=1e-5)
+solver_theta.setFromOptions()
+
+def calc_theta(pos_crack_tip=[0., 0.]):
+    #How to determine the crack tip? Barycentre of last facet for which alpha = 1?
+    x0 = pos_crack_tip[0]  # x-coordinate of the crack tip
+    y0 = pos_crack_tip[1]  # y-coordinate
+    r = 2 * float(ell) #from Li article
+    R = 5 * float(ell)
+
+    def neartip(x, on_boundary):
+        dist = sqrt((x[0]-x0)**2 + (x[1]-y0)**2)
+        return dist < r
+
+    def outside(x, on_boundary):
+        dist = sqrt((x[0]-x0)**2 + (x[1]-y0)**2)
+        return dist > R
+
+    bc1 = DirichletBC(V_theta, Constant(1.0), neartip)
+    bc2 = DirichletBC(V_theta, Constant(0.0), outside)
+    bcs = [bc1, bc2]
+    a = inner(grad(theta_trial), grad(theta_test))*dx
+    L = inner(Constant(0.0), theta_test)*dx
+
+    #petsc4py
+    a = assemble(a)
+    TT,b = as_backend_type(a).mat().getVecs()
+    L = assemble(L)
+    for bc in bcs:
+        bc.apply(a)
+        bc.apply(L)
+    solver_theta.setOperators(as_backend_type(a).mat())
+    solver_theta.solve(as_backend_type(L).vec(),TT)
+    assert solver_theta.getConvergedReason() > 0
+    theta.vector()[:] = TT
+    theta.vector().apply('insert')
+
+#savedir = "/scratch/marazzato/DG_CR_perf_%i" % num_computation
+savedir = "DG_CR_%i" % num_computation  
 perf = open(savedir+'/perf.txt', 'w', 1)
 
-def postprocessing(num,it):
+def postprocessing(num,it,t):
+    ##plot(mesh)
+    #pos = find_crack_tip()
+    #calc_theta(pos)
+    #aux = (1-theta)*(BC()-u)
+    #img = plot(inner(aux, aux))
+    #plt.colorbar(img)
+    #plt.show()
     #Perf measure
     func = project(BC(), V_u)
     err = errornorm(u, func, 'h1') #h1? #h10? #l2?
-    err_l2 = errornorm(u, func, 'l2')
+    #err_l2 = errornorm(u, func, 'l2')
+    pos = find_crack_tip()
+    calc_theta(pos)
+    aux = (1-theta)*(BC()-u)
+    err_l2 = sqrt(assemble(inner(aux,aux) * dx))
     if rank == 0:
-        perf.write('%i %i %.3e %.3e\n' % (num, it, err_l2, err)) 
+        perf.write('%i %.3e %i %.3e %.3e\n' % (num, t, it, err_l2, err)) 
     
 
 T = 1 #final simulation time
-dt = cell_size# / 5 #should be h more ore less
+#dt = cell_size / 5 #should be h more ore less
+dt = 0.006 #0.0021 # 0.003 #0.004 #0.006
 
 #Starting with crack lips already broken
 aux = np.zeros_like(alpha.vector().get_local())
@@ -277,8 +353,8 @@ lb.vector().apply('insert')
 solver_u = PETSc.KSP()
 solver_u.create(comm)
 #PETScOptions.set("ksp_monitor")
-solver_u.setType('preonly') #gmres
-solver_u.getPC().setType('lu') #gamg lu
+solver_u.setType('gmres') #gmres
+solver_u.getPC().setType('gamg') #gamg lu
 solver_u.setTolerances(rtol=1e-5,atol=1e-8) #rtol=1e-8
 solver_u.setFromOptions()
 
@@ -295,7 +371,7 @@ def RHS():
     bc_u.apply(RHS)
     return as_backend_type(RHS).vec()
 
-load_steps = np.arange(0.3, T+dt, dt) #normal start: 0.2
+load_steps = np.arange(0.27, T+dt, dt) #normal start: 0.2 #0.3
 N_steps = len(load_steps)
 
 for (i,t) in enumerate(load_steps):
@@ -309,7 +385,7 @@ for (i,t) in enumerate(load_steps):
     
     # solve alternate minimization
     err,it = alternate_minimization(u,alpha,maxiter=500,tol=1e-4)
-    postprocessing(i,it)
+    postprocessing(i,it,t)
     
     # updating the lower bound to account for the irreversibility
     lb.vector()[:] = alpha.vector()
