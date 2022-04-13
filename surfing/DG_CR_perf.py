@@ -353,8 +353,8 @@ lb.vector().apply('insert')
 solver_u = PETSc.KSP()
 solver_u.create(comm)
 #PETScOptions.set("ksp_monitor")
-solver_u.setType('gmres') #gmres
-solver_u.getPC().setType('gamg') #gamg lu
+solver_u.setType('preonly') #gmres
+solver_u.getPC().setType('lu') #gamg lu
 solver_u.setTolerances(rtol=1e-5,atol=1e-8) #rtol=1e-8
 solver_u.setFromOptions()
 
