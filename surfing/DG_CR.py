@@ -19,9 +19,9 @@ rank = comm.rank
 L = 5; H = 1;
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("mesh/mesh_1.xdmf") as infile:
+with XDMFFile("mesh/test.xdmf") as infile:
     infile.read(mesh)
-num_computation = 1
+num_computation = 0
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
 
@@ -339,6 +339,8 @@ def calc_gtheta():
 savedir = "test_DG_%i" % num_computation    
 file_alpha = File(savedir+"/alpha.pvd") 
 file_u = File(savedir+"/u.pvd")
+file_err = File(savedir+"/err.pvd")
+file_BC = File(savedir+"/bc.pvd")
 energies = []
 save_energies = open(savedir+'/energies.txt', 'w', 1)
 #perf = open(savedir+'/perf.txt', 'w', 1)
@@ -358,6 +360,22 @@ def postprocessing(num,Nsteps):
         print('time: %.3f pos: %.2f\n' % (r.t,pos[0]))
     calc_theta(pos)
     res = calc_gtheta()
+
+    #truc = (1-theta[0])*(BC()-u)
+    #img = plot(inner(truc,truc))
+    #plt.colorbar(img)
+    #plt.show()
+    aux = (1-theta[0])*(BC()-u)
+    aux = assemble(inner(aux,aux) * dx)
+    print('res %i: %.3e' % (num_computation, aux))
+    #sys.exit()
+    err = project((1-theta[0])*(BC()-u), V_u)
+    file_err << (err, 0) #r.t)
+    err = project(BC()-u, V_u)
+    file_err << (err, 1) #r.t)
+    bbc = project(BC(), V_u)
+    file_BC << (bbc, r.t)
+    #sys.exit()
 
     if rank == 0:
         save_energies.write('%.3e %.5e %.5e %.5e %.5e %.5e %.5e %.5e %.5e\n' % (r.t, energies[0], energies[1], energies[2], res[0]/Gc_eff, res[1]/Gc_eff, pos[0], res[0]/Gc, res[1]/Gc))
@@ -379,8 +397,8 @@ lb.vector().apply('insert')
 solver_u = PETSc.KSP()
 solver_u.create(comm)
 #PETScOptions.set("ksp_monitor")
-solver_u.setType('gmres')
-solver_u.getPC().setType('ilu') #gamg ilu
+solver_u.setType('preonly')
+solver_u.getPC().setType('lu') #gamg ilu
 solver_u.setTolerances(rtol=1e-5,atol=1e-8) #rtol=1e-8
 solver_u.setFromOptions()
 
@@ -397,7 +415,7 @@ def RHS():
     bc_u.apply(RHS)
     return as_backend_type(RHS).vec()
 
-load_steps = np.arange(0.3, T+dt, dt) #normal start: 0.2
+load_steps = np.arange(0.25, T+dt, dt) #normal start: 0.2
 N_steps = len(load_steps)
 
 for (i,t) in enumerate(load_steps):
