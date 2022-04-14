@@ -18,9 +18,13 @@ rank = comm.rank
 
 L = 5; H = 1;
 #Gmsh mesh. Already cracked
-mesh = Mesh()
-with XDMFFile("mesh/test.xdmf") as infile:
-    infile.read(mesh)
+size_ref = 25
+mesh = RectangleMesh(Point(0, -H/2), Point(L,H/2), 5*size_ref, size_ref, 'crossed')
+#mesh = Mesh()
+#with XDMFFile("mesh/test.xdmf") as infile:
+#    infile.read(mesh)
+#plot(mesh)
+#plt.show()
 num_computation = 0
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
@@ -55,10 +59,10 @@ crack.mark(boundaries, 2)
 #To impose alpha=1 on crack
 V_alpha = FunctionSpace(mesh, 'CR', 1) #'CR'
 V_beta = FunctionSpace(mesh, 'DG', 0) #test
-v = TestFunction(V_alpha)
-A = FacetArea(mesh)
-vec = assemble(v / A * ds(2)).get_local()
-nz = vec.nonzero()[0]
+#v = TestFunction(V_alpha)
+#A = FacetArea(mesh)
+#vec = assemble(v / A * ds(2)).get_local()
+#nz = vec.nonzero()[0]
 
 def w(alpha):
     """Dissipated energy function as a function of the damage """
@@ -182,8 +186,8 @@ mtf = Function(V_alpha).vector()
 solver_alpha.setFunction(pb_alpha.F, mtf.vec())
 A = PETScMatrix()
 solver_alpha.setJacobian(pb_alpha.J, A.mat())
-solver_alpha.getKSP().setType('cg') #preonly #cg
-solver_alpha.getKSP().getPC().setType('hypre') #bjacobi 'lu'
+solver_alpha.getKSP().setType('preonly') #preonly #cg
+solver_alpha.getKSP().getPC().setType('lu') #bjacobi 'lu'
 solver_alpha.getKSP().setTolerances(rtol=1e-8) #rtol=1e-6, atol=1e-8)
 solver_alpha.getKSP().setFromOptions()
 solver_alpha.setFromOptions()
@@ -231,6 +235,9 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
             sys.exit()
         alpha.vector()[:] = xv
         alpha.vector().apply('insert')
+        img = plot(alpha)
+        plt.colorbar(img)
+        plt.show()
         alpha_error.vector()[:] = alpha.vector() - alpha_0.vector()
         alpha_error.vector().apply('insert')
         err_alpha = norm(alpha_error.vector(),"linf")
@@ -342,14 +349,14 @@ def postprocessing(t):
         perf.write('%.3e %.3e %.3e\n' % (t, err_l2, err)) 
     
 
-#Starting with crack lips already broken
-aux = np.zeros_like(alpha.vector().get_local())
-aux[nz] = np.ones_like(nz)
-alpha.vector().set_local(aux)
-alpha.vector().apply('insert')
-lb.vector()[:] = alpha.vector() #irreversibility
-lb.vector().apply('insert')
-#file_alpha << (alpha,0)
+##Starting with crack lips already broken
+#aux = np.zeros_like(alpha.vector().get_local())
+#aux[nz] = np.ones_like(nz)
+#alpha.vector().set_local(aux)
+#alpha.vector().apply('insert')
+#lb.vector()[:] = alpha.vector() #irreversibility
+#lb.vector().apply('insert')
+##file_alpha << (alpha,0)
 
 #test
 solver_u = PETSc.KSP()
@@ -374,12 +381,20 @@ def RHS():
     return as_backend_type(RHS).vec()
 
 r.t = 0.4
-print('t: %.3f' % r.t)
+if rank == 0: 
+    print('t: %.3f' % r.t)
 
-test = Expression('x[0] < pos && abs(x[1]) < eps ? 1 : 0', pos=vel*r.t, eps=1e-2, degree = 2)
+test = Expression('x[0] < pos && abs(x[1]) < eps ? 1 : 0', pos=vel*r.t, eps=0.5*cell_size, degree = 2)
 
 file_u << (interpolate(test, V_alpha), 0)
-sys.exit()
+alpha.vector()[:] = interpolate(test, V_alpha).vector()
+alpha.vector().apply('insert')
+img = plot(alpha)
+plt.colorbar(img)
+plt.show()
+lb.vector()[:] = alpha.vector() #irreversibility
+lb.vector().apply('insert')
+#sys.exit()
 
 #updating BC
 bc_u =  DirichletBC(V_u, BC(), boundaries, 1, method='geometric')
