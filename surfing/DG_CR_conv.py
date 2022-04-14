@@ -19,9 +19,9 @@ rank = comm.rank
 L = 5; H = 1;
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("mesh/mesh_1.xdmf") as infile:
+with XDMFFile("mesh/test.xdmf") as infile:
     infile.read(mesh)
-num_computation = 1
+num_computation = 0
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
 
@@ -313,10 +313,12 @@ def calc_theta(pos_crack_tip=[0., 0.]):
     theta.vector().apply('insert')
 
 #savedir = "/scratch/marazzato/DG_CR_perf_%i" % num_computation
-savedir = "DG_CR_%i" % num_computation  
-perf = open(savedir+'/perf.txt', 'w', 1)
+savedir = "conv_%i" % num_computation  
+perf = open(savedir+'/conv.txt', 'w', 1)
+file_BC = File(savedir+"/bc.pvd")
+file_u = File(savedir+"/u.pvd")
 
-def postprocessing(num,it,t):
+def postprocessing(t):
     ##plot(mesh)
     #pos = find_crack_tip()
     #calc_theta(pos)
@@ -324,8 +326,12 @@ def postprocessing(num,it,t):
     #img = plot(inner(aux, aux))
     #plt.colorbar(img)
     #plt.show()
+
+    file_u << (u,r.t)
+    
     #Perf measure
     func = project(BC(), V_u)
+    file_BC << (func,r.t)
     err = errornorm(u, func, 'h1') #h1? #h10? #l2?
     #err_l2 = errornorm(u, func, 'l2')
     pos = find_crack_tip()
@@ -333,12 +339,8 @@ def postprocessing(num,it,t):
     aux = (1-theta)*(BC()-u)
     err_l2 = sqrt(assemble(inner(aux,aux) * dx))
     if rank == 0:
-        perf.write('%i %.3e %i %.3e %.3e\n' % (num, t, it, err_l2, err)) 
+        perf.write('%.3e %.3e %.3e\n' % (t, err_l2, err)) 
     
-
-T = 1 #final simulation time
-#dt = cell_size / 5 #should be h more ore less
-dt = 0.006 #0.0021 # 0.003 #0.004 #0.006
 
 #Starting with crack lips already broken
 aux = np.zeros_like(alpha.vector().get_local())
@@ -371,24 +373,19 @@ def RHS():
     bc_u.apply(RHS)
     return as_backend_type(RHS).vec()
 
-load_steps = np.arange(0.27, T+dt, dt) #normal start: 0.2 #0.3
-N_steps = len(load_steps)
+r.t = 0.4
+print('t: %.3f' % r.t)
 
-for (i,t) in enumerate(load_steps):
-    r.t = t
+test = Expression('x[0] < pos && abs(x[1]) < eps ? 1 : 0', pos=vel*r.t, eps=1e-2, degree = 2)
 
-    if rank == 0:
-        print('t: %.3f' % t)
+file_u << (interpolate(test, V_alpha), 0)
+sys.exit()
 
-    #updating BC
-    bc_u =  DirichletBC(V_u, BC(), boundaries, 1, method='geometric')
+#updating BC
+bc_u =  DirichletBC(V_u, BC(), boundaries, 1, method='geometric')
     
-    # solve alternate minimization
-    err,it = alternate_minimization(u,alpha,maxiter=500,tol=1e-4)
-    postprocessing(i,it,t)
-    
-    # updating the lower bound to account for the irreversibility
-    lb.vector()[:] = alpha.vector()
-    lb.vector().apply('insert')
+# solve alternate minimization
+err,it = alternate_minimization(u,alpha,maxiter=500,tol=1e-4)
+postprocessing(r.t)
     
 sys.exit()
