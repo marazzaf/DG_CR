@@ -18,14 +18,12 @@ rank = comm.rank
 
 L = 5; H = 1;
 #Gmsh mesh. Already cracked
-size_ref = 25
-mesh = RectangleMesh(Point(0, -H/2), Point(L,H/2), 5*size_ref, size_ref, 'crossed')
-#mesh = Mesh()
-#with XDMFFile("mesh/test.xdmf") as infile:
-#    infile.read(mesh)
+mesh = Mesh()
+with XDMFFile("mesh/mesh_2.xdmf") as infile:
+    infile.read(mesh)
 #plot(mesh)
 #plt.show()
-num_computation = 0
+num_computation = 2
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
 
@@ -59,10 +57,10 @@ crack.mark(boundaries, 2)
 #To impose alpha=1 on crack
 V_alpha = FunctionSpace(mesh, 'CR', 1) #'CR'
 V_beta = FunctionSpace(mesh, 'DG', 0) #test
-#v = TestFunction(V_alpha)
-#A = FacetArea(mesh)
-#vec = assemble(v / A * ds(2)).get_local()
-#nz = vec.nonzero()[0]
+v = TestFunction(V_alpha)
+A = FacetArea(mesh)
+vec = assemble(v / A * ds(2)).get_local()
+nz = vec.nonzero()[0]
 
 def w(alpha):
     """Dissipated energy function as a function of the damage """
@@ -235,9 +233,6 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
             sys.exit()
         alpha.vector()[:] = xv
         alpha.vector().apply('insert')
-        img = plot(alpha)
-        plt.colorbar(img)
-        plt.show()
         alpha_error.vector()[:] = alpha.vector() - alpha_0.vector()
         alpha_error.vector().apply('insert')
         err_alpha = norm(alpha_error.vector(),"linf")
@@ -340,23 +335,23 @@ def postprocessing(t):
     func = project(BC(), V_u)
     file_BC << (func,r.t)
     err = errornorm(u, func, 'h1') #h1? #h10? #l2?
-    #err_l2 = errornorm(u, func, 'l2')
-    pos = find_crack_tip()
-    calc_theta(pos)
-    aux = (1-theta)*(BC()-u)
-    err_l2 = sqrt(assemble(inner(aux,aux) * dx))
+    err_l2 = errornorm(u, func, 'l2')
+    #pos = find_crack_tip()
+    #calc_theta(pos)
+    #aux = (1-theta)*(BC()-u)
+    #err_l2 = sqrt(assemble(inner(aux,aux) * dx))
     if rank == 0:
         perf.write('%.3e %.3e %.3e\n' % (t, err_l2, err)) 
     
 
-##Starting with crack lips already broken
-#aux = np.zeros_like(alpha.vector().get_local())
-#aux[nz] = np.ones_like(nz)
-#alpha.vector().set_local(aux)
-#alpha.vector().apply('insert')
-#lb.vector()[:] = alpha.vector() #irreversibility
-#lb.vector().apply('insert')
-##file_alpha << (alpha,0)
+#Starting with crack lips already broken
+aux = np.zeros_like(alpha.vector().get_local())
+aux[nz] = np.ones_like(nz)
+alpha.vector().set_local(aux)
+alpha.vector().apply('insert')
+lb.vector()[:] = alpha.vector() #irreversibility
+lb.vector().apply('insert')
+#file_alpha << (alpha,0)
 
 #test
 solver_u = PETSc.KSP()
@@ -384,14 +379,14 @@ r.t = 0.4
 if rank == 0: 
     print('t: %.3f' % r.t)
 
-test = Expression('x[0] < pos && abs(x[1]) < eps ? 1 : 0', pos=vel*r.t, eps=0.5*cell_size, degree = 2)
+test = Expression('x[0] < pos && abs(x[1]) < eps ? 1 : 0', pos=vel*r.t, eps=2*cell_size, degree = 2)
 
 file_u << (interpolate(test, V_alpha), 0)
 alpha.vector()[:] = interpolate(test, V_alpha).vector()
 alpha.vector().apply('insert')
-img = plot(alpha)
-plt.colorbar(img)
-plt.show()
+#img = plot(alpha)
+#plt.colorbar(img)
+#plt.show()
 lb.vector()[:] = alpha.vector() #irreversibility
 lb.vector().apply('insert')
 #sys.exit()
@@ -400,7 +395,7 @@ lb.vector().apply('insert')
 bc_u =  DirichletBC(V_u, BC(), boundaries, 1, method='geometric')
     
 # solve alternate minimization
-err,it = alternate_minimization(u,alpha,maxiter=500,tol=1e-4)
+err,it = alternate_minimization(u,alpha,maxiter=500,tol=1e-5)
 postprocessing(r.t)
     
 sys.exit()
