@@ -18,10 +18,10 @@ rank = comm.rank
 
 L = 5; H = 1;
 #Gmsh mesh. Already cracked
-mesh = Mesh()
-with XDMFFile("mesh/mesh_4b.xdmf") as infile: #mesh_surfing_very_fine #coarse #test is finest
-    infile.read(mesh)
 num_computation = 4
+mesh = Mesh()
+with XDMFFile("mesh/mesh_%ib.xdmf" % num_computation) as infile:
+    infile.read(mesh)
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
 
@@ -33,7 +33,7 @@ K1 = Constant(1.)
 ell = Constant(3*cell_size)
 if rank == 0:
     print('\ell: %.3e' % float(ell))
-    print(cell_size/5)
+    print(cell_size)
 #sys.exit()
 
 boundaries = MeshFunction("size_t", mesh,1)
@@ -231,18 +231,20 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
         
     return (err_alpha, it)
 
-savedir = "test_CG_%i" % num_computation    
+savedir = "/scratch/marazzato/CG_CG_perf_%i" % num_computation
+#savedir = "CG_CG_perf_%i" % num_computation  
 perf = open(savedir+'/perf.txt', 'w', 1)
 
-def postprocessing(num,it):
+def postprocessing(num,it,t):
     func = project(BC(), V_u)
     err = errornorm(u, func, 'h1') #h1? #h10? #l2?
     err_l2 = errornorm(u, func, 'l2')
     if rank == 0:
-        perf.write('%i %i %.3e %.3e\n' % (num, it, err_l2, err))
+        perf.write('%i %.3e %i %.3e %.3e\n' % (num, t, it, err_l2, err))
 
 T = 1 #final simulation time
-dt = cell_size# / 5 #should be h more ore less
+#dt = cell_size / 5 #should be h more ore less
+dt = 0.0021 #0.0021 # 0.003 #0.004 #0.006
 
 #Starting with crack lips already broken
 aux = np.zeros_like(alpha.vector().get_local())
@@ -273,7 +275,7 @@ def RHS():
     bc_u.apply(RHS)
     return as_backend_type(RHS).vec()
 
-load_steps = np.arange(0.3, T+dt, dt) #normal start: 0.2
+load_steps = np.arange(0.27, T+dt, dt) #normal start: 0.2 #0.3
 N_steps = len(load_steps)
 
 for (i,t) in enumerate(load_steps):
@@ -287,7 +289,7 @@ for (i,t) in enumerate(load_steps):
     
     # solve alternate minimization
     err,it = alternate_minimization(u,alpha,maxiter=500,tol=1e-4)
-    postprocessing(i,it)
+    postprocessing(i,it,t)
     
     
     # updating the lower bound to account for the irreversibility
