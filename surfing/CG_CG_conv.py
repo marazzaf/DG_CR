@@ -19,22 +19,22 @@ rank = comm.rank
 L = 5; H = 1;
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("mesh/mesh_4.xdmf") as infile:
+num_computation = 6
+with XDMFFile("mesh_CG/mesh_%i.xdmf" % num_computation) as infile:
     infile.read(mesh)
-num_computation = 4
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
 
 E, nu = Constant(1.0), Constant(0.3)
 kappa = (3-nu)/(1+nu)
 mu = 0.5*E/(1+nu)
-Gc = Constant(1.5)
+Gc = Constant(1.)
 K1 = Constant(1.)
 ell = Constant(3*cell_size) #cell_size
 if rank == 0:
     print('\ell: %.3e' % float(ell))
-    print(cell_size/5)
-#sys.exit()
+    print(cell_size)
+sys.exit()
 
 boundaries = MeshFunction("size_t", mesh,1)
 boundaries.set_all(0)
@@ -53,8 +53,7 @@ crack = Crack()
 crack.mark(boundaries, 2)
 
 #To impose alpha=1 on crack
-V_alpha = FunctionSpace(mesh, 'CR', 1) #'CR'
-V_beta = FunctionSpace(mesh, 'DG', 0) #test
+V_alpha = FunctionSpace(mesh, 'CG', 1) #'CR'
 v = TestFunction(V_alpha)
 A = FacetArea(mesh)
 vec = assemble(v / A * ds(2)).get_local()
@@ -88,7 +87,7 @@ c_w = 4*sympy.integrate(sympy.sqrt(w(z)),(z,0,1))
 Gc_eff = Gc * (1 + cell_size/(ell*float(c_w)))
 
 # Create function space for 2D elasticity + Damage
-V_u = VectorFunctionSpace(mesh, "DG", 1) #DG
+V_u = VectorFunctionSpace(mesh, "CG", 1) #DG
 if rank == 0:
     #print('nb dof in disp: %i' % V_u.dim())
     print('nb dof total: %i' % (V_u.dim()+V_alpha.dim()))
@@ -114,24 +113,6 @@ def BC():
     s_theta_2 = sqrt(0.5 * (1-c_theta)) * sign(x[1])
     return  K1/(2*mu) * sqrt(r/(2*np.pi)) * (kappa - c_theta) * as_vector((c_theta_2,s_theta_2)) #condition de bord de Dirichlet en disp
 
-#Writing LHS for disp
-def b(alpha):
-    test = Expression('pow(1-alpha,2)+k', degree = 2, alpha=alpha, k=Constant(1.e-6))
-    return interpolate(test, V_beta) #V_alpha #V_beta
-
-def w_avg(disp,dam):
-    sig = sigma_0(disp)
-    lumped = b(dam)
-    prod = lumped * sig
-    tot = lumped('+')+lumped('-')
-    w1 = lumped('+') / tot
-    w2 = lumped('-') / tot
-    return w1*prod('+') + w2*prod('-')
-
-def pen(alpha):
-    lumped = b(alpha)
-    return 2*lumped('+')*lumped('-') / (lumped('+')+lumped('-'))
-    
 #Energies
 pen_value = 2*mu
 dissipated_energy = Gc/float(c_w)*(w(alpha)/ell + ell*dot(grad(alpha), grad(alpha)))*dx
@@ -250,16 +231,16 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
     return (err_alpha, it)
 
 #savedir = "/scratch/marazzato/DG_CR_perf_%i" % num_computation
-savedir = "conv_%i" % num_computation  
+savedir = "CG_conv_%i" % num_computation  
 perf = open(savedir+'/conv.txt', 'a', 1)
 file_BC = File(savedir+"/bc.pvd")
 file_u = File(savedir+"/u.pvd")
 
 def postprocessing(t):
-    file_u << (u,r.t)
+    #file_u << (u,r.t)
     #Perf measure
     func = project(BC(), V_u)
-    file_BC << (func,r.t)
+    #file_BC << (func,r.t)
     err = errornorm(u, func, 'h1') #h1? #h10? #l2?
     err_l2 = errornorm(u, func, 'l2')
     if rank == 0:
@@ -279,15 +260,13 @@ lb.vector().apply('insert')
 solver_u = PETSc.KSP()
 solver_u.create(comm)
 #PETScOptions.set("ksp_monitor")
-solver_u.setType('preonly') #gmres
-solver_u.getPC().setType('lu') #gamg lu
+solver_u.setType('cg') #gmres
+solver_u.getPC().setType('hypre') #gamg lu
 solver_u.setTolerances(rtol=1e-5,atol=1e-8) #rtol=1e-8
 solver_u.setFromOptions()
 
 def LHS():
-    LHS = inner(b(alpha)*sigma_0(du), eps(v)) * dx
-    LHS += -inner(dot(w_avg(du,alpha),n('+')), jump(v))*dS + inner(dot(w_avg(v,alpha),n('+')), jump(du))*dS
-    LHS += pen_value/h_avg * pen(alpha) * inner(jump(du), jump(v))*dS
+    LHS = inner(sigma(du,alpha), eps(v)) * dx
     LHS = assemble(LHS)
     bc_u.apply(LHS)
     return as_backend_type(LHS).mat()
@@ -297,13 +276,13 @@ def RHS():
     bc_u.apply(RHS)
     return as_backend_type(RHS).vec()
 
-r.t = 0.8
+r.t = 0.5 #0.75 #0.5
 if rank == 0: 
     print('t: %.3f' % r.t)
 
-test = Expression('x[0] < pos && abs(x[1]) < eps ? 1 : 0', pos=vel*r.t, eps=2*cell_size, degree = 2)
-
-file_u << (interpolate(test, V_alpha), 0)
+test = Expression('x[0] < pos && abs(x[1]) < eps ? 1 : 0', pos=vel*r.t, eps=cell_size, degree = 2)
+#2*cell_size
+#file_u << (interpolate(test, V_alpha), 0)
 alpha.vector()[:] = interpolate(test, V_alpha).vector()
 alpha.vector().apply('insert')
 lb.vector()[:] = alpha.vector() #irreversibility
