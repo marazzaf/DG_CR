@@ -19,11 +19,11 @@ rank = comm.rank
 L = 5; H = 1;
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("mesh/mesh_2.xdmf") as infile:
+num_computation = 4
+with XDMFFile("mesh/mesh_%i.xdmf" % num_computation) as infile:
     infile.read(mesh)
 #plot(mesh)
 #plt.show()
-num_computation = 2
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
 
@@ -35,8 +35,8 @@ K1 = Constant(1.)
 ell = Constant(3*cell_size) #cell_size
 if rank == 0:
     print('\ell: %.3e' % float(ell))
-    print(cell_size/5)
-#sys.exit()
+    print(cell_size) #/5)
+sys.exit()
 
 boundaries = MeshFunction("size_t", mesh,1)
 boundaries.set_all(0)
