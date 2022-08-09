@@ -19,7 +19,7 @@ rank = comm.rank
 
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-n_elt = 250
+n_elt = 100
 mesh = RectangleMesh(Point(0, -0.5), Point(1,0.5), n_elt, n_elt, "crossed")
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
@@ -47,7 +47,8 @@ bottom.mark(boundaries, 2) # mark right as 2
 ds = Measure("ds",subdomain_data=boundaries)
 
 #To impose alpha=1 on crack
-V_alpha = FunctionSpace(mesh, 'CG', 1) #'CR'
+V_alpha = FunctionSpace(mesh, 'CR', 1)
+V_beta = FunctionSpace(mesh, 'DG', 0) #for interpolation
 
 def w(alpha):
     """Dissipated energy function as a function of the damage """
@@ -75,7 +76,7 @@ c_w = 4*sympy.integrate(sympy.sqrt(w(z)),(z,0,1))
 Gc_eff = Gc * (1 + cell_size/(ell*float(c_w)))
 
 # Create function space for 2D elasticity + Damage
-V_u = VectorFunctionSpace(mesh, "CG", 1) #DG
+V_u = VectorFunctionSpace(mesh, "DG", 1)
 if rank == 0:
     #print('nb dof in disp: %i' % V_u.dim())
     print('nb dof total: %i' % (V_u.dim()+V_alpha.dim()))
@@ -90,10 +91,28 @@ h_avg = 0.5 * (h('+') + h('-'))
 n = FacetNormal(mesh)
 
 #Dirichlet BC on disp
-u_D = Constant((-9e-3,0)) #(-5e-3,0))
+u_D = Constant((-5e-3,0)) #(-5e-3,0))
 bcu_0 = DirichletBC(V_u, u_D, boundaries, 1, method='geometric')
 bcu_1 = DirichletBC(V_u, Constant((0.,0.)), boundaries, 2, method='geometric')
 bc_u = [bcu_0, bcu_1]
+
+#Writing LHS for disp
+def b(alpha):
+    test = Expression('pow(1-alpha,2)+k', degree = 2, alpha=alpha, k=Constant(1.e-6))
+    return interpolate(test, V_beta) #V_alpha #V_beta
+
+def w_avg(disp,dam):
+    sig = sigma_0(disp)
+    lumped = b(dam)
+    prod = lumped * sig
+    tot = lumped('+')+lumped('-')
+    w1 = lumped('+') / tot
+    w2 = lumped('-') / tot
+    return w1*prod('+') + w2*prod('-')
+
+def pen(alpha):
+    lumped = b(alpha)
+    return 2*lumped('+')*lumped('-') / (lumped('+')+lumped('-'))
 
 #Energies
 pen_value = 2*mu
@@ -239,6 +258,8 @@ lb.vector().apply('insert')
 
 def LHS():
     LHS = inner(sigma(du,alpha), eps(v)) * dx
+    LHS += -inner(dot(w_avg(du,alpha),n('+')), jump(v))*dS + inner(dot(w_avg(v,alpha),n('+')), jump(du))*dS
+    LHS += pen_value/h_avg * pen(alpha) * inner(jump(du), jump(v))*dS
     LHS = assemble(LHS)
     for bc in bc_u:
         bc.apply(LHS)
@@ -262,7 +283,7 @@ if rank == 0:
     print(F2)
     print('Force: %.5e' % (F1+F2))
 
-savedir='CG'
+savedir='DG'
 file_alpha = File(savedir+"/alpha.pvd")
 file_u = File(savedir+"/u.pvd")
 
