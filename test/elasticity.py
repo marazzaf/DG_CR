@@ -16,7 +16,7 @@ rank = comm.rank
 
 #Gmsh mesh.
 mesh = Mesh()
-with XDMFFile("mesh_3.xdmf") as infile:
+with XDMFFile("mesh_4.xdmf") as infile:
     infile.read(mesh)
 ndim = mesh.topology().dim() # get number of space dimensions
 h = mesh.hmax()
@@ -28,8 +28,8 @@ E, nu = Constant(210), Constant(0.3)
 mu    = 0.5*E/(1 + nu)
 lmbda = E*nu / (1 - nu*nu)
 
-bottom = CompiledSubDomain("near(x[1], 0.5, 1e-4)")
-top = CompiledSubDomain("near(x[1], -0.5, 1e-4)")
+top = CompiledSubDomain("near(x[1], 0.5, 1e-4)")
+bottom = CompiledSubDomain("near(x[1], -0.5, 1e-4)")
 boundaries = MeshFunction("size_t", mesh,1)
 boundaries.set_all(0)
 top.mark(boundaries, 1)
@@ -46,6 +46,9 @@ def sigma(u):
 
 # Create function space for 2D elasticity + Damage
 V_u = VectorFunctionSpace(mesh, "CG", 1)
+if rank == 0:
+    print('nb dof total: %i' % V_u.dim())
+
 
 # Define the function, test and trial fields
 u, du, v = Function(V_u, name='disp'), TrialFunction(V_u), TestFunction(V_u)
@@ -65,16 +68,16 @@ solver_u.getPC().setType('lu')
 solver_u.setTolerances(rtol=1e-5,atol=1e-8,max_it=5000) #rtol=1e-5,max_it=2000 #rtol=1e-3
 solver_u.setFromOptions()
 
-LHS = inner(sigma(du), grad(v)) * dx
-LHS = assemble(LHS)
+a = inner(sigma(du), grad(v)) * dx
+LHS = assemble(a)
 for bc in bc_u:
     bc.apply(LHS)
 A = as_backend_type(LHS).mat()
 
-RHS = interpolate(Constant((0,0)), V_u).vector()
+l = interpolate(Constant((0,0)), V_u).vector()
 for bc in bc_u:
-    bc.apply(RHS)
-L = as_backend_type(RHS).vec()
+    bc.apply(l)
+L = as_backend_type(l).vec()
 
 # solve elastic problem
 solver_u.setOperators(A)
@@ -94,7 +97,26 @@ u.vector().apply('insert')
 #plt.show()
 
 #post processing
-sig = sigma(u)
-F = sigma(u)[0,0] * (ds(1)+ds(2))
-F = assemble(F)
-print('Force: %.5e' % F)
+F1 = 1e3 * sigma(u)[0,0] * ds(1)
+F1 = abs(assemble(F1))
+F2 = 1e3 * sigma(u)[0,0] * ds(2)
+F2 = abs(assemble(F2))
+if rank == 0:
+    print(F1)
+    print(F2)
+    print('Force: %.5e' % (F1+F2))
+
+savedir='elas'
+file_u = File(savedir+"/u.pvd")
+file_u << (u,0)
+
+#consistant reaction forces
+residual = action(a, u)
+
+v_reac = Function(V_u)
+bc = DirichletBC(V_u.sub(0), Constant(1.), boundaries, 2) # DirichletBC(V_u.sub(0), Constant(1.), boundaries, 1)]
+#for b in bc:
+bc.apply(v_reac.vector())
+res = assemble(action(residual, v_reac))
+if rank == 0:
+    print("Reaction = {}".format(res))

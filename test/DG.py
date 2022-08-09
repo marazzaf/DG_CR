@@ -19,7 +19,7 @@ rank = comm.rank
 
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-n_elt = 100
+n_elt = 150
 mesh = RectangleMesh(Point(0, -0.5), Point(1,0.5), n_elt, n_elt, "crossed")
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
@@ -28,7 +28,7 @@ E, nu = Constant(210), Constant(0.3)
 mu    = 0.5*E/(1 + nu)
 lmbda = E*nu / (1 - nu*nu)
 Gc = Constant(2.7e-3)
-ell = Constant(0.015) #2*cell_size)
+ell = Constant(2*cell_size) #0.015) #2*cell_size)
 if rank == 0:
     print('\ell: %.3e' % float(ell))
     print(cell_size)
@@ -289,3 +289,18 @@ file_u = File(savedir+"/u.pvd")
 
 file_alpha << (alpha,0)
 file_u << (u,0)
+
+#consistent reaction forces
+a = inner(sigma_0(du), eps(v)) * dx
+a += -inner(dot(w_avg(du,alpha),n('+')), jump(v))*dS + inner(dot(w_avg(v,alpha),n('+')), jump(du))*dS
+a += pen_value/h_avg * pen(alpha) * inner(jump(du), jump(v))*dS
+
+residual = action(a, u)
+
+v_reac = Function(V_u)
+bc = DirichletBC(V_u.sub(0), Constant(1.), boundaries, 2, method='geometric')
+bc.apply(v_reac.vector())
+res = assemble(action(residual, v_reac))
+if rank == 0:
+    print("Reaction = {}".format(res))
+    

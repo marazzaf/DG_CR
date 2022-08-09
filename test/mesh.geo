@@ -3,8 +3,8 @@ L = 1;
 W = 1;
 lnotch = L/2;
 
-hf = 0.001;
-hc = 0.01;
+hf = 0.0005;
+hc = 0.005;
 
 Point(1) = {L, W/2, 0, hc};
 Point(2) = {L,epsc,0, hf};

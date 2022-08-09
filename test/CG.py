@@ -19,7 +19,7 @@ rank = comm.rank
 
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-n_elt = 250
+n_elt = 350
 mesh = RectangleMesh(Point(0, -0.5), Point(1,0.5), n_elt, n_elt, "crossed")
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
@@ -28,7 +28,7 @@ E, nu = Constant(210), Constant(0.3)
 mu    = 0.5*E/(1 + nu)
 lmbda = E*nu / (1 - nu*nu)
 Gc = Constant(2.7e-3)
-ell = Constant(0.015) #2*cell_size)
+ell = Constant(2*cell_size) #0.015) #2*cell_size)
 if rank == 0:
     print('\ell: %.3e' % float(ell))
     print(cell_size)
@@ -90,7 +90,7 @@ h_avg = 0.5 * (h('+') + h('-'))
 n = FacetNormal(mesh)
 
 #Dirichlet BC on disp
-u_D = Constant((-9e-3,0)) #(-5e-3,0))
+u_D = Constant((-5e-3,0)) #(-5e-3,0))
 bcu_0 = DirichletBC(V_u, u_D, boundaries, 1, method='geometric')
 bcu_1 = DirichletBC(V_u, Constant((0.,0.)), boundaries, 2, method='geometric')
 bc_u = [bcu_0, bcu_1]
@@ -268,3 +268,15 @@ file_u = File(savedir+"/u.pvd")
 
 file_alpha << (alpha,0)
 file_u << (u,0)
+
+#consistent reaction forces
+a = inner(sigma_0(du), eps(v)) * dx
+
+residual = action(a, u)
+
+v_reac = Function(V_u)
+bc = DirichletBC(V_u.sub(0), Constant(1.), boundaries, 2, method='geometric')
+bc.apply(v_reac.vector())
+res = assemble(action(residual, v_reac))
+if rank == 0:
+    print("Reaction = {}".format(res))
