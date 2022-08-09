@@ -1,27 +1,26 @@
 epsc = 0.01;
 L = 1;
-W = 1:
+W = 1;
+lnotch = L/2;
 
-hf = 0.03;
-hc = 0.7;
+hf = 0.001;
+hc = 0.01;
 
-Point(1) = {lnotch+a, b, 0, hf};
-Point(2) = {lnotch,-epsc,0, hf};
-Point(3) = {lnotch-wnotch/2,-wnotch/2,0,hf};
-Point(4) = {0,-wnotch/2,0,hf};
-Point(5) = {0,wnotch/2,0,hf};
-Point(6) = {lnotch-wnotch/2,wnotch/2,0,hf};
-Point(7) = {lnotch,epsc,0, hf};
+Point(1) = {L, W/2, 0, hc};
+Point(2) = {L,epsc,0, hf};
+Point(3) = {lnotch,0,0,hf};
+Point(4) = {L,-epsc,0,hf};
+Point(5) = {L, -W/2,0,hc};
+Point(6) = {0, -W/2,0,hc};
+Point(7) = {0, W/2, 0, hc};
 
-//For i In {1:7}
-//	Line(i) = {i,i%7+1};
-//EndFor
-//Line Loop(1) = {1:7};
-//Plane Surface(1) = {1};
-//
-//Physical Surface(1) = {1};
-//Physical Surface(2) = {2};
-//Physical Line(30)   = {19};
-//Physical Line(40)   = {20};
-//Physical Line(50)   = {21,22};
-//Physical Point(600) = {21};
+For i In {1:7}
+	Line(i) = {i,i%7+1};
+EndFor
+Line Loop(1) = {1:7};
+Plane Surface(1) = {1};
+
+Physical Surface(1) = {1};
+Physical Surface(2) = {2};
+Physical Line(7)   = {7};
+Physical Line(5)   = {5};
