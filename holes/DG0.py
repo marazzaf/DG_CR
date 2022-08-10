@@ -19,7 +19,7 @@ rank = comm.rank
 
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("mesh_2.xdmf") as infile:
+with XDMFFile("mesh_3.xdmf") as infile:
     infile.read(mesh)
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
@@ -29,6 +29,9 @@ mu    = Constant(2.45)
 lmbda = Constant(1.94)
 Gc = Constant(2.28e-3)
 ell = Constant(2*cell_size) #Constant(0.1) Constant(2*cell_size)
+if rank == 0:
+    print(float(ell))
+sys.exit()
 
 boundaries = MeshFunction("size_t", mesh,1)
 boundaries.set_all(0)
@@ -107,7 +110,7 @@ n = FacetNormal(mesh)
 hF = FacetArea(mesh)
 
 #Dirichlet BC on disp
-t_init = 0.1 #0.5
+t_init = 0.25 #0.5
 dt = 1e-3
 T = 2
 u_D = Expression(('0.', 'x[1] > 0 ? t : 0'), t=t_init, degree=2)
