@@ -209,7 +209,7 @@ solver_alpha.setFunction(pb_alpha.F, bb.vec())
 A = PETScMatrix()
 solver_alpha.setJacobian(pb_alpha.J, A.mat())
 solver_alpha.getKSP().setType('cg')
-solver_alpha.getKSP().getPC().setType('bjacobi') #'bjacobi' #'lu'
+solver_alpha.getKSP().getPC().setType('hypre') #'bjacobi' #'lu'
 solver_alpha.getKSP().setTolerances(rtol=1e-6, atol=1e-8, max_it=4000) #rtol=1e-8
 solver_alpha.getKSP().setFromOptions()
 solver_alpha.setFromOptions()
@@ -355,8 +355,8 @@ dt = T/500 #T / 500
 solver_u = PETSc.KSP()
 solver_u.create(comm)
 #PETScOptions.set("ksp_monitor")
-solver_u.setType('preonly')
-solver_u.getPC().setType('lu') #try it? #'lu'
+solver_u.setType('preonly') #gmres
+solver_u.getPC().setType('lu') #gamg #'lu'
 solver_u.setTolerances(rtol=1e-5,atol=1e-8,max_it=100000) #rtol=1e-5,max_it=2000 #rtol=1e-3
 solver_u.setFromOptions()
 

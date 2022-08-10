@@ -25,6 +25,7 @@ cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
 num_computation = 1
 
+#material parameters
 mu    = Constant(2.45)
 lmbda = Constant(1.94)
 Gc = Constant(2.28e-3)
@@ -47,7 +48,7 @@ upper_hole = Upper_hole()
 upper_hole.mark(boundaries, 2)
 class Lower_hole(SubDomain):
     def inside(self, x, on_boundary):
-        return on_boundary and 0.014 < x[0] < 0.026 and -0.034 < x[1] < -0.046
+        return on_boundary and 0.014 < x[0] < 0.026 and -0.046 < x[1] < -0.034
 lower_hole = Lower_hole()
 lower_hole.mark(boundaries, 3)
 class Large_hole(SubDomain):
@@ -94,6 +95,8 @@ Gc_eff = Gc * (1 + cell_size/(ell*float(c_w)))
 
 # Create function space for 2D elasticity + Damage
 V_u = VectorFunctionSpace(mesh, "DG", 1)
+if rank == 0:
+    print('nb dof total: %i' % (V_u.dim()+V_alpha.dim()))
 
 # Define the function, test and trial fields
 u, du, v = Function(V_u, name='disp'), TrialFunction(V_u), TestFunction(V_u)
@@ -105,8 +108,10 @@ n = FacetNormal(mesh)
 hF = FacetArea(mesh)
 
 #Dirichlet BC on disp
-t_init = 0.5
-u_D = Expression(('0.', 'x[1]/fabs(x[1]) * t'), t=t_init, degree=1)
+t_init = 0.1 #0.5
+dt = 1e-3
+T = 2
+u_D = Expression(('0.', 'x[1] > 0 ? t : 0'), t=t_init, degree=2)
 bcu_1 =  DirichletBC(V_u, u_D, boundaries, 2, method='geometric')
 bcu_2 =  DirichletBC(V_u, u_D, boundaries, 3, method='geometric')
 bc_u = [bcu_1, bcu_2]
@@ -145,7 +150,7 @@ E_alpha_alpha = derivative(E_alpha,alpha,dalpha)
 
 # Damage
 bcalpha_0 = DirichletBC(V_alpha, Constant(0), boundaries, 1, method='geometric')
-bcalpha_1 = DirichletBC(V_alpha, Constant(1), boundaries, 2, method='geometric') #upper hole not cracked
+bcalpha_1 = DirichletBC(V_alpha, Constant(0), boundaries, 2, method='geometric') #upper hole not cracked
 bcalpha_2 = DirichletBC(V_alpha, Constant(0), boundaries, 3, method='geometric') #lower hole not cracked
 bc_alpha = [bcalpha_0, bcalpha_1, bcalpha_2]
 
@@ -181,7 +186,7 @@ solver_alpha.setFunction(pb_alpha.F, bb.vec())
 A = PETScMatrix()
 solver_alpha.setJacobian(pb_alpha.J, A.mat())
 solver_alpha.getKSP().setType('cg')
-solver_alpha.getKSP().getPC().setType('bjacobi') #'bjacobi' #'lu'
+solver_alpha.getKSP().getPC().setType('hypre') #'bjacobi' #'lu'
 solver_alpha.getKSP().setTolerances(rtol=1e-6, atol=1e-8, max_it=4000) #rtol=1e-8
 solver_alpha.getKSP().setFromOptions()
 solver_alpha.setFromOptions()
@@ -250,21 +255,22 @@ file_alpha = File(savedir+"/alpha.pvd")
 file_u = File(savedir+"/u.pvd")
 ld = open(savedir+'/ld.txt', 'w', 1)
 
+v_reac = Function(V_u)
 def postprocessing(num,Nsteps):
     ## Dump solution to file
     #if num % 10 == 0:
     file_alpha << (alpha,u_D.t)
     file_u << (u,u_D.t)
 
-    #Load. Use residual
-    load = inner(dot(stress, n), as_vector((0,1))) * ds(2) #on one hole
-    load = assemble(load)
+    #Load with residual
+    a = inner(b(alpha)*sigma_0(du), eps(v)) * dx - inner(dot(w_avg(du,alpha),n('+')), jump(v))*dS + inner(dot(w_avg(v,alpha),n('+')), jump(du))*dS + pen_value/h_avg * pen(alpha) * inner(jump(du), jump(v))*dS 
+    residual = action(a, u)
+    bc = DirichletBC(V_u.sub(1), Constant(1.), boundaries, 2, method='geometric')
+    bc.apply(v_reac.vector())
+    load = assemble(action(residual, v_reac))
     
     if rank == 0:
-        ld.write('%.5e %.5e\n' % (COD, load))
-    
-
-T = 1e-3
+        ld.write('%.5e %.5e\n' % (u_D.t, load))
 
 #Setting up solver in disp
 solver_u = PETSc.KSP()
@@ -291,7 +297,7 @@ def RHS():
     return as_backend_type(RHS).vec()
 
 #Put the initial crack in the domain
-test = Expression('x[0] < 0.1 && abs(x[1]-5e-3) < eps ? 1 : 0', eps=0.75*cell_size, degree = 2)
+test = Expression('x[0] < 0.01 && abs(x[1]-5e-3) < eps ? 1 : 0', eps=0.75*cell_size, degree = 2)
 #2*cell_size
 #file_u << (interpolate(test, V_alpha), 0)
 alpha.vector()[:] = interpolate(test, V_alpha).vector()
@@ -323,6 +329,4 @@ for (i,t) in enumerate(load_steps):
     postprocessing(i,N_steps)
 
 #file_u_bis.close()
-save_energies.close()
 ld.close()
-crack_pos.close()
