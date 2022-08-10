@@ -12,4 +12,4 @@ def create_mesh(mesh, cell_type, prune_z=False):
     return out_mesh
 
 triangle_mesh = create_mesh(mesh_from_file, "triangle", prune_z=True)
-meshio.write("mesh_2.xdmf", triangle_mesh)
+meshio.write("test.xdmf", triangle_mesh)

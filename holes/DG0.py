@@ -42,17 +42,17 @@ bnd.mark(boundaries, 1)
 
 class Upper_hole(SubDomain):
     def inside(self, x, on_boundary):
-        return on_boundary and 0.014 < x[0] < 0.026 and 0.034 < x[1] < 0.046
+        return on_boundary and 14 < x[0] < 26 and 34 < x[1] < 46
 upper_hole = Upper_hole()
 upper_hole.mark(boundaries, 2)
 class Lower_hole(SubDomain):
     def inside(self, x, on_boundary):
-        return on_boundary and 0.014 < x[0] < 0.026 and -0.046 < x[1] < -0.034
+        return on_boundary and 14 < x[0] < 26 and -46 < x[1] < -34
 lower_hole = Lower_hole()
 lower_hole.mark(boundaries, 3)
 class Large_hole(SubDomain):
     def inside(self, x, on_boundary):
-        return on_boundary and 0.026 < x[0] < 0.047 and -0.019 < x[1] < 0.001
+        return on_boundary and 26 < x[0] < 47 and -19 < x[1] < 1
 large_hole = Large_hole()
 large_hole.mark(boundaries, 4)
 
@@ -107,7 +107,7 @@ n = FacetNormal(mesh)
 hF = FacetArea(mesh)
 
 #Dirichlet BC on disp
-t_init = 0. #0.5
+t_init = 0.1 #0.5
 dt = 1e-3
 T = 2
 u_D = Expression(('0.', 'x[1] > 0 ? t : 0'), t=t_init, degree=2)
@@ -208,7 +208,7 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
     while err_alpha>tol and iter<maxiter:
         #test
         aux = Constant(0) * v[0] * dx
-        #solve(LHS_bis() == aux, u, bcs=bc_u, solver_parameters={"linear_solver": "bicgstab", "preconditioner": "hypre_amg"},)
+        #solve(LHS_bis() == aux, u, bcs=bc_u, solver_parameters={"linear_solver": "gmres", "preconditioner": "hypre_amg"},)
         solve(LHS_bis() == aux, u, bcs=bc_u, solver_parameters={"linear_solver": "mumps"},)
         
         ## solve elastic problem
@@ -308,7 +308,7 @@ def RHS():
     return as_backend_type(RHS).vec()
 
 #Put the initial crack in the domain
-test = Expression('x[0] < 0.01 && abs(x[1]-5e-3) < eps ? 1 : 0', eps=0.5*cell_size, degree = 1)
+test = Expression('x[0] < 10 && abs(x[1]-5) < eps ? 1 : 0', eps=0.5*cell_size, degree = 1)
 #2*cell_size
 #file_u << (interpolate(test, V_alpha), 0)
 alpha.vector()[:] = interpolate(test, V_alpha).vector()
