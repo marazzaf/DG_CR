@@ -19,17 +19,16 @@ rank = comm.rank
 
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("CT_3.xdmf") as infile:
+with XDMFFile("mesh.xdmf") as infile:
     infile.read(mesh)
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
 num_computation = 1
 
-E, nu = Constant(2.98), Constant(0.35)
-mu = 0.5*E/(1+nu)
-Gc = Constant(2.85e-4)
-cell_size = 0.03
-ell = Constant(3*cell_size)
+mu    = Constant(2.45)
+lmbda = Constant(1.94)
+Gc = Constant(2.28e-3)
+ell = 0.1 #Constant(3*cell_size)
 
 boundaries = MeshFunction("size_t", mesh,1)
 boundaries.set_all(0)
@@ -37,40 +36,25 @@ ds = Measure("ds",subdomain_data=boundaries)
 
 class Bnd(SubDomain):
     def inside(self, x, on_boundary):
-        return on_boundary and (x[0] < 1 or 31 < x[1] or x[1] < -31 or x[0] > 60 or (x[0] < 21 and abs(x[1]) < 2.1))
+        return on_boundary
 bnd = Bnd()
-bnd.mark(boundaries, 4)
-
-class Crack(SubDomain):
-    def inside(self, x, on_boundary):
-        return on_boundary and abs(x[1]) < 1 and 30 < x[0] < 37 #10 < x[0] < 37
-crack = Crack()
-crack.mark(boundaries, 1)
+bnd.mark(boundaries, 1)
 
 class Upper_hole(SubDomain):
     def inside(self, x, on_boundary):
-        return on_boundary and 2 < x[0] < 22.86 and 10 < x[1] < 25
-
-class Lower_hole(SubDomain):
-    def inside(self, x, on_boundary):
-        return on_boundary and 2 < x[0] < 22.86 and -25 < x[1] < -10
+        return on_boundary and 0.014 < x[0] < 0.026 and 0.034 < x[1] < 0.046
 upper_hole = Upper_hole()
 upper_hole.mark(boundaries, 2)
+class Lower_hole(SubDomain):
+    def inside(self, x, on_boundary):
+        return on_boundary and 0.014 < x[0] < 0.026 and -0.034 < x[1] < -0.046
 lower_hole = Lower_hole()
 lower_hole.mark(boundaries, 3)
-
-#test to measure COD
-class Up(SubDomain):
+class Large_hole(SubDomain):
     def inside(self, x, on_boundary):
-        return on_boundary and 1 < x[1] < 3 and 10 < x[0] < 14
-
-class Down(SubDomain):
-    def inside(self, x, on_boundary):
-        return on_boundary and 10 < x[0] < 14 and -3 < x[1] < -1
-up = Up()
-up.mark(boundaries, 5)
-down = Down()
-down.mark(boundaries, 6)
+        return on_boundary and 0.026 < x[0] < 0.047 and -0.019 < x[1] < 0.001
+large_hole = Large_hole()
+large_hole.mark(boundaries, 4)
 
 #To impose alpha=1 on crack
 V_alpha = FunctionSpace(mesh, 'CR', 1)
@@ -89,26 +73,19 @@ def local_project(v,V):
     return u
 
 def w(alpha):
-    """Dissipated energy function as a function of the damage """
     return alpha
 
 def a(alpha):
-    """Stiffness modulation as a function of the damage """
     k_ell = Constant(1.e-6) # residual stiffness
     return (1-alpha)**2+k_ell
 
 def eps(u):
-    """Strain tensor as a function of the displacement"""
     return sym(grad(u))
 
 def sigma_0(u):
-    """Stress tensor of the undamaged material as a function of the displacement"""
-    mu    = 0.5*E/(1 + nu)
-    lmbda = E*nu / (1 - nu*nu)
     return 2.0*mu*(eps(u)) + lmbda*tr(eps(u))*Identity(ndim)
 
 def sigma(u,alpha):
-    """Stress tensor of the damaged material as a function of the displacement and the damage"""
     return (a(alpha))*sigma_0(u)
 
 z = sympy.Symbol("z")
@@ -128,7 +105,7 @@ n = FacetNormal(mesh)
 hF = FacetArea(mesh)
 
 #Dirichlet BC on disp
-t_init = 8.5e-2
+t_init = 0.5
 u_D = Expression(('0.', 'x[1]/fabs(x[1]) * t'), t=t_init, degree=1)
 bcu_1 =  DirichletBC(V_u, u_D, boundaries, 2, method='geometric')
 bcu_2 =  DirichletBC(V_u, u_D, boundaries, 3, method='geometric')
@@ -167,15 +144,10 @@ E_alpha = derivative(total_energy,alpha,beta)
 E_alpha_alpha = derivative(E_alpha,alpha,dalpha)
 
 # Damage
-#problem with this BC!
-bcalpha_0 = DirichletBC(V_alpha, Constant(0), boundaries, 4) #rest of the boundary not cracked
-bcalpha_1 = DirichletBC(V_alpha, Constant(1), boundaries, 1) #crack lips
-bcalpha_2 = DirichletBC(V_alpha, Constant(0), boundaries, 2) #holes not cracked #Constant(0)
-bcalpha_3 = DirichletBC(V_alpha, Constant(0), boundaries, 3) #holes not cracked
-bcalpha_4 = DirichletBC(V_alpha, Constant(0), boundaries, 5) #holes not cracked
-bcalpha_5 = DirichletBC(V_alpha, Constant(0), boundaries, 6) #holes not cracked
-bc_alpha = [bcalpha_0, bcalpha_1, bcalpha_2, bcalpha_3, bcalpha_4, bcalpha_5]
-#bc_alpha = [bcalpha_1]
+bcalpha_0 = DirichletBC(V_alpha, Constant(0), boundaries, 1, method='geometric')
+bcalpha_1 = DirichletBC(V_alpha, Constant(1), boundaries, 2, method='geometric') #upper hole not cracked
+bcalpha_2 = DirichletBC(V_alpha, Constant(0), boundaries, 3, method='geometric') #lower hole not cracked
+bc_alpha = [bcalpha_0, bcalpha_1, bcalpha_2]
 
 class DamageProblem():
 
@@ -273,45 +245,10 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
         assert iter < maxiter
     return (err_alpha, iter)
 
-savedir = "/scratch/marazzato/super_fine"
+savedir = "DG"
 file_alpha = File(savedir+"/alpha.pvd")
-#file_alpha_bis = XDMFFile(savedir+"/alpha.xdmf")
-#file_alpha_bis.parameters["flush_output"] = True
-#file_alpha_bis.parameters["functions_share_mesh"] = True
-#file_alpha_bis.parameters["rewrite_function_mesh"] = False
 file_u = File(savedir+"/u.pvd")
-#file_u_bis = XDMFFile(savedir+"/u.xdmf")
-#file_u_bis.write(mesh)
-#file_u_bis.parameters["flush_output"] = True
-#file_u_bis.parameters["functions_share_mesh"] = True
-#file_u_bis.parameters["rewrite_function_mesh"] = False
-#file_sig = File(savedir+"/sigma.pvd")
-energies = []
-save_energies = open(savedir+'/energies.txt', 'w', 1)
 ld = open(savedir+'/ld.txt', 'w', 1)
-crack_pos = open(savedir+'/crack_pos.txt', 'w', 1)
-
-W = TensorFunctionSpace(mesh, 'DG', 0)
-stress = Function(W, name="stress")
-
-#to get crack tip coordinates
-coor = V_alpha.tabulate_dof_coordinates()
-xcoor = coor[:,0]
-ycoor = coor[:,1]
-
-def find_crack_tip():
-    # Estimate the current crack tip
-    ind = alpha.vector().get_local() > 0.9
-    
-    if ind.any():
-        xmax = xcoor[ind].max()
-        ymax = ycoor[ind].max()
-    else:
-        xmax,ymax = 0,0
-    x0 = MPI.max(comm, xmax)
-    y0 = MPI.max(comm, ymax)
-
-    return [x0, y0]
 
 def postprocessing(num,Nsteps):
     ## Dump solution to file
@@ -319,37 +256,15 @@ def postprocessing(num,Nsteps):
     file_alpha << (alpha,u_D.t)
     file_u << (u,u_D.t)
 
-    #file_u_bis.write_checkpoint(u,'disp', u_D.t, XDMFFile.Encoding.HDF5, True)        
-    #file_alpha_bis.write_checkpoint(alpha,'damage', u_D.t, XDMFFile.Encoding.HDF5, True)
-    stress.vector()[:] = local_project(sigma(u,alpha), W).vector()
-    stress.vector().apply("insert")
-    #file_sig << (stress,u_D.t)
-
-    #Energies
-    elastic_energy_value = assemble(elastic_energy)
-    surface_energy_value = assemble(dissipated_energy)        
-    energies = [elastic_energy_value,surface_energy_value,elastic_energy_value+surface_energy_value]
-
-    #Pos crack tip
-    pos = find_crack_tip()
-
-    #Load
-    #compute COD
-    #COD = u(12.7,2)[1] - u(12.7,-2)[1]
-    COD = assemble( u[1]/hF * ds(5) - u[1]/hF * ds(6) )
+    #Load. Use residual
     load = inner(dot(stress, n), as_vector((0,1))) * ds(2) #on one hole
     load = assemble(load)
     
     if rank == 0:
-        #print('%.2f %.3e' % (pos[1],load))
-        save_energies.write('%.3e %.5e %.5e %.5e\n' % (u_D.t, energies[0], energies[1], energies[2]))
         ld.write('%.5e %.5e\n' % (COD, load))
-        crack_pos.write('%.5e %.5e\n' % (pos[0], pos[1]))
     
 
-T = 0.25 #final simulation time
-#dt = cell_size / 1e4 #should be h more ore less
-dt = T/500 #T / 500
+T = 1e-3
 
 #Setting up solver in disp
 solver_u = PETSc.KSP()
@@ -375,29 +290,21 @@ def RHS():
         bc.apply(RHS)
     return as_backend_type(RHS).vec()
 
-#test
-#solving damage problem to have the nice phase field
-solver_alpha.setVariableBounds(lb.vector().vec(),ub.vector().vec())
-xx = alpha.copy(deepcopy=True)
-xv = as_backend_type(xx.vector()).vec()
-solver_alpha.solve(None, xv)
-alpha.vector()[:] = xv
+#Put the initial crack in the domain
+test = Expression('x[0] < 0.1 && abs(x[1]-5e-3) < eps ? 1 : 0', eps=0.75*cell_size, degree = 2)
+#2*cell_size
+#file_u << (interpolate(test, V_alpha), 0)
+alpha.vector()[:] = interpolate(test, V_alpha).vector()
 alpha.vector().apply('insert')
-#file_alpha << (alpha,1)
-#sys.exit()
-lb.vector()[:] = alpha.vector() #enforcing irreversibility
+lb.vector()[:] = alpha.vector() #irreversibility
 lb.vector().apply('insert')
 
 #Setting up real bc in alpha
-bc_alpha = [bcalpha_0, bcalpha_2, bcalpha_3] #bcalpha_0
 for bc in bc_alpha:
     bc.apply(lb.vector())
     bc.apply(ub.vector())
     bc.apply(alpha.vector())
 
-#file_alpha << (alpha,1)
-#sys.exit()
-    
 #loop on rest of the problem
 load_steps = np.arange(t_init, T+dt, dt)
 N_steps = len(load_steps)
