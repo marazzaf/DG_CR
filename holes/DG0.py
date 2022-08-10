@@ -19,7 +19,7 @@ rank = comm.rank
 
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("mesh_3.xdmf") as infile:
+with XDMFFile("mesh_2.xdmf") as infile:
     infile.read(mesh)
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
@@ -107,7 +107,7 @@ n = FacetNormal(mesh)
 hF = FacetArea(mesh)
 
 #Dirichlet BC on disp
-t_init = 0 #0.5
+t_init = 0. #0.5
 dt = 1e-3
 T = 2
 u_D = Expression(('0.', 'x[1] > 0 ? t : 0'), t=t_init, degree=2)
@@ -208,7 +208,7 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
     while err_alpha>tol and iter<maxiter:
         #test
         aux = Constant(0) * v[0] * dx
-        #solve(LHS() == aux, u, bcs=bc_u, solver_parameters={"linear_solver": "gmres", "preconditioner": "hypre_amg"},)
+        #solve(LHS_bis() == aux, u, bcs=bc_u, solver_parameters={"linear_solver": "bicgstab", "preconditioner": "hypre_amg"},)
         solve(LHS_bis() == aux, u, bcs=bc_u, solver_parameters={"linear_solver": "mumps"},)
         
         ## solve elastic problem
