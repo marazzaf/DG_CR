@@ -19,16 +19,16 @@ rank = comm.rank
 
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("mesh_2.xdmf") as infile:
+with XDMFFile("test.xdmf") as infile:
     infile.read(mesh)
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
 
 #material parameters
-mu    = Constant(2.45)
-lmbda = Constant(1.94)
-Gc = Constant(2.28e-3)
-ell = Constant(2*cell_size) #Constant(0.1) Constant(2*cell_size)
+mu    = Constant(8)
+lmbda = Constant(12)
+Gc = Constant(5.4e-4)
+ell = Constant(2*cell_size) #Constant(0.03) Constant(2*cell_size)
 
 boundaries = MeshFunction("size_t", mesh,1)
 boundaries.set_all(0)
@@ -40,25 +40,34 @@ class Bnd(SubDomain):
 bnd = Bnd()
 bnd.mark(boundaries, 1)
 
-class Upper_hole(SubDomain):
+class Up(SubDomain):
     def inside(self, x, on_boundary):
-        return on_boundary and 0.014 < x[0] < 0.026 and 0.034 < x[1] < 0.046
-upper_hole = Upper_hole()
-upper_hole.mark(boundaries, 2)
-class Lower_hole(SubDomain):
+        return on_boundary and 4-cell_size < x[0] < 4+cell_size and 1 < x[1]
+up = Up()
+up.mark(boundaries, 2)
+class Lower_left(SubDomain):
     def inside(self, x, on_boundary):
-        return on_boundary and 0.014 < x[0] < 0.026 and -0.046 < x[1] < -0.034
-lower_hole = Lower_hole()
-lower_hole.mark(boundaries, 3)
-class Large_hole(SubDomain):
+        return on_boundary and x[0] < cell_size and x[1] < cell_size
+lower_left = Lower_left()
+lower_left.mark(boundaries, 3)
+class Lower_right(SubDomain):
     def inside(self, x, on_boundary):
-        return on_boundary and 0.026 < x[0] < 0.047 and -0.019 < x[1] < 0.001
-large_hole = Large_hole()
-large_hole.mark(boundaries, 4)
+        return on_boundary and x[0] > 8-cell_size and x[1] < cell_size
+lower_right = Lower_right()
+lower_right.mark(boundaries, 4)
+class Crack(SubDomain):
+    def inside(self, x, on_boundary):
+        return on_boundary and 3.8-cell_size/2 < x[0] < 4.2+cell_size/2 and x[1] < 0.41
+crack = Crack()
+crack.mark(boundaries, 5)
 
 #To impose alpha=1 on crack
 V_alpha = FunctionSpace(mesh, 'CR', 1)
 V_beta = FunctionSpace(mesh, 'DG', 0) #for interpolation
+v = TestFunction(V_alpha)
+A = FacetArea(mesh)
+vec = assemble(v / A * ds(5)).get_local()
+nz = vec.nonzero()[0]
 
 metadata={"quadrature_degree": 0}
 def local_project(v,V):
@@ -107,13 +116,14 @@ n = FacetNormal(mesh)
 hF = FacetArea(mesh)
 
 #Dirichlet BC on disp
-t_init = 0. #0.5
+t_init = 0.01 #0.5
 dt = 1e-3
-T = 2
-u_D = Expression(('0.', 'x[1] > 0 ? t : 0'), t=t_init, degree=2)
-bcu_1 =  DirichletBC(V_u, u_D, boundaries, 2, method='geometric')
-bcu_2 =  DirichletBC(V_u, u_D, boundaries, 3, method='geometric')
-bc_u = [bcu_1, bcu_2]
+T = 6e-2
+u_D = Expression('-t', t=t_init, degree=1)
+bcu_1 =  DirichletBC(V_u.sub(1), u_D, boundaries, 2, method='geometric')
+bcu_2 =  DirichletBC(V_u, Constant((0,0)), boundaries, 3, method='geometric')
+bcu_3 =  DirichletBC(V_u.sub(1), Constant(0), boundaries, 4, method='geometric')
+bc_u = [bcu_1, bcu_2, bcu_3]
 
 #Writing LHS for disp
 def b(alpha):
@@ -307,11 +317,10 @@ def RHS():
         bc.apply(RHS)
     return as_backend_type(RHS).vec()
 
-#Put the initial crack in the domain
-test = Expression('x[0] < 0.01 && abs(x[1]-5e-3) < eps ? 1 : 0', eps=0.5*cell_size, degree = 1)
-#2*cell_size
-#file_u << (interpolate(test, V_alpha), 0)
-alpha.vector()[:] = interpolate(test, V_alpha).vector()
+#Starting with crack lips already broken
+aux = np.zeros_like(alpha.vector().get_local())
+aux[nz] = np.ones_like(nz)
+alpha.vector().set_local(aux)
 alpha.vector().apply('insert')
 lb.vector()[:] = alpha.vector() #irreversibility
 lb.vector().apply('insert')
