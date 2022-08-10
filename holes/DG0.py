@@ -19,17 +19,16 @@ rank = comm.rank
 
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("mesh.xdmf") as infile:
+with XDMFFile("mesh_3.xdmf") as infile:
     infile.read(mesh)
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
-num_computation = 1
 
 #material parameters
 mu    = Constant(2.45)
 lmbda = Constant(1.94)
 Gc = Constant(2.28e-3)
-ell = 0.1 #Constant(3*cell_size)
+ell = Constant(2*cell_size) #Constant(0.1) Constant(2*cell_size)
 
 boundaries = MeshFunction("size_t", mesh,1)
 boundaries.set_all(0)
@@ -97,6 +96,7 @@ Gc_eff = Gc * (1 + cell_size/(ell*float(c_w)))
 V_u = VectorFunctionSpace(mesh, "DG", 1)
 if rank == 0:
     print('nb dof total: %i' % (V_u.dim()+V_alpha.dim()))
+sys.exit()
 
 # Define the function, test and trial fields
 u, du, v = Function(V_u, name='disp'), TrialFunction(V_u), TestFunction(V_u)
@@ -108,7 +108,7 @@ n = FacetNormal(mesh)
 hF = FacetArea(mesh)
 
 #Dirichlet BC on disp
-t_init = 0.1 #0.5
+t_init = 0 #0.5
 dt = 1e-3
 T = 2
 u_D = Expression(('0.', 'x[1] > 0 ? t : 0'), t=t_init, degree=2)
@@ -207,19 +207,24 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
     solver_alpha.setVariableBounds(lb.vector().vec(),ub.vector().vec())
     # iteration loop
     while err_alpha>tol and iter<maxiter:
-        # solve elastic problem
-        solver_u.setOperators(LHS())
-        XX = u.copy(deepcopy=True)
-        XV = as_backend_type(XX.vector()).vec()
-        solver_u.solve(RHS(),XV)
-        try:
-            assert solver_u.getConvergedReason() > 0
-        except AssertionError:
-            if rank == 0:
-                print('Error on solver u: %i' % solver_u.getConvergedReason())
-            sys.exit()
-        u.vector()[:] = XV
-        u.vector().apply('insert')
+        #test
+        aux = Constant(0) * v[0] * dx
+        #solve(LHS() == aux, u, bcs=bc_u, solver_parameters={"linear_solver": "gmres", "preconditioner": "hypre_amg"},)
+        solve(LHS() == aux, u, bcs=bc_u, solver_parameters={"linear_solver": "mumps"},)
+        
+        ## solve elastic problem
+        #solver_u.setOperators(LHS())
+        #XX = u.copy(deepcopy=True)
+        #XV = as_backend_type(XX.vector()).vec()
+        #solver_u.solve(RHS(),XV)
+        #try:
+        #    assert solver_u.getConvergedReason() > 0
+        #except AssertionError:
+        #    if rank == 0:
+        #        print('Error on solver u: %i' % solver_u.getConvergedReason())
+        #    sys.exit()
+        #u.vector()[:] = XV
+        #u.vector().apply('insert')
 
         #solving damage problem
         xx = alpha.copy(deepcopy=True)
@@ -278,17 +283,18 @@ solver_u.create(comm)
 #PETScOptions.set("ksp_monitor")
 solver_u.setType('preonly')
 solver_u.getPC().setType('lu') #try it? #'lu'
-solver_u.setTolerances(rtol=1e-5,atol=1e-8,max_it=100000) #rtol=1e-5,max_it=2000 #rtol=1e-3
+solver_u.setTolerances(rtol=1e-5,atol=1e-8,max_it=1000) #rtol=1e-5,max_it=2000 #rtol=1e-3
 solver_u.setFromOptions()
 
 def LHS():
     LHS = inner(b(alpha)*sigma_0(du), eps(v)) * dx
     LHS += -inner(dot(w_avg(du,alpha),n('+')), jump(v))*dS + inner(dot(w_avg(v,alpha),n('+')), jump(du))*dS
-    LHS += pen_value/h_avg * pen(alpha) * inner(jump(du), jump(v))*dS 
-    LHS = assemble(LHS)
-    for bc in bc_u:
-        bc.apply(LHS)
-    return as_backend_type(LHS).mat()
+    LHS += pen_value/h_avg * pen(alpha) * inner(jump(du), jump(v))*dS
+    return LHS
+    #LHS = assemble(LHS)
+    #for bc in bc_u:
+    #    bc.apply(LHS)
+    #return as_backend_type(LHS).mat()
 
 def RHS():
     RHS = interpolate(Constant((0,0)), V_u).vector()
@@ -297,7 +303,7 @@ def RHS():
     return as_backend_type(RHS).vec()
 
 #Put the initial crack in the domain
-test = Expression('x[0] < 0.01 && abs(x[1]-5e-3) < eps ? 1 : 0', eps=0.75*cell_size, degree = 2)
+test = Expression('x[0] < 0.01 && abs(x[1]-5e-3) < eps ? 1 : 0', eps=0.5*cell_size, degree = 1)
 #2*cell_size
 #file_u << (interpolate(test, V_alpha), 0)
 alpha.vector()[:] = interpolate(test, V_alpha).vector()
