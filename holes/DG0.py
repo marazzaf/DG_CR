@@ -96,7 +96,6 @@ Gc_eff = Gc * (1 + cell_size/(ell*float(c_w)))
 V_u = VectorFunctionSpace(mesh, "DG", 1)
 if rank == 0:
     print('nb dof total: %i' % (V_u.dim()+V_alpha.dim()))
-sys.exit()
 
 # Define the function, test and trial fields
 u, du, v = Function(V_u, name='disp'), TrialFunction(V_u), TestFunction(V_u)
@@ -210,7 +209,7 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
         #test
         aux = Constant(0) * v[0] * dx
         #solve(LHS() == aux, u, bcs=bc_u, solver_parameters={"linear_solver": "gmres", "preconditioner": "hypre_amg"},)
-        solve(LHS() == aux, u, bcs=bc_u, solver_parameters={"linear_solver": "mumps"},)
+        solve(LHS_bis() == aux, u, bcs=bc_u, solver_parameters={"linear_solver": "mumps"},)
         
         ## solve elastic problem
         #solver_u.setOperators(LHS())
@@ -286,15 +285,21 @@ solver_u.getPC().setType('lu') #try it? #'lu'
 solver_u.setTolerances(rtol=1e-5,atol=1e-8,max_it=1000) #rtol=1e-5,max_it=2000 #rtol=1e-3
 solver_u.setFromOptions()
 
-def LHS():
+def LHS_bis():
     LHS = inner(b(alpha)*sigma_0(du), eps(v)) * dx
     LHS += -inner(dot(w_avg(du,alpha),n('+')), jump(v))*dS + inner(dot(w_avg(v,alpha),n('+')), jump(du))*dS
     LHS += pen_value/h_avg * pen(alpha) * inner(jump(du), jump(v))*dS
     return LHS
-    #LHS = assemble(LHS)
-    #for bc in bc_u:
-    #    bc.apply(LHS)
-    #return as_backend_type(LHS).mat()
+
+def LHS():
+    LHS = inner(b(alpha)*sigma_0(du), eps(v)) * dx
+    LHS += -inner(dot(w_avg(du,alpha),n('+')), jump(v))*dS + inner(dot(w_avg(v,alpha),n('+')), jump(du))*dS
+    LHS += pen_value/h_avg * pen(alpha) * inner(jump(du), jump(v))*dS
+    #return LHS
+    LHS = assemble(LHS)
+    for bc in bc_u:
+        bc.apply(LHS)
+    return as_backend_type(LHS).mat()
 
 def RHS():
     RHS = interpolate(Constant((0,0)), V_u).vector()
@@ -334,5 +339,4 @@ for (i,t) in enumerate(load_steps):
     lb.vector().apply('insert')
     postprocessing(i,N_steps)
 
-#file_u_bis.close()
 ld.close()
