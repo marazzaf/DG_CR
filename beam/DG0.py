@@ -47,17 +47,17 @@ up = Up()
 up.mark(boundaries, 2)
 class Lower_left(SubDomain):
     def inside(self, x, on_boundary):
-        return on_boundary and x[0] < cell_size and x[1] < cell_size
+        return on_boundary and x[0] < 0.2 and x[1] < 0.2
 lower_left = Lower_left()
 lower_left.mark(boundaries, 3)
 class Lower_right(SubDomain):
     def inside(self, x, on_boundary):
-        return on_boundary and x[0] > 8-cell_size and x[1] < cell_size
+        return on_boundary and x[0] > 7.8 and x[1] < 0.2
 lower_right = Lower_right()
 lower_right.mark(boundaries, 4)
 class Crack(SubDomain):
     def inside(self, x, on_boundary):
-        return on_boundary and 3.8 < x[0] < 4 and x[1] < 0.41
+        return on_boundary and 3.9 < x[0] < 4.1 and x[1] < 0.41
 crack = Crack()
 crack.mark(boundaries, 5)
 
@@ -105,8 +105,6 @@ Gc_eff = Gc * (1 + cell_size/(ell*float(c_w)))
 V_u = VectorFunctionSpace(mesh, "DG", 1)
 if rank == 0:
     print('nb dof total: %i' % (V_u.dim()+V_alpha.dim()))
-    print(V_u.dim())
-sys.exit()
 
 # Define the function, test and trial fields
 u, du, v = Function(V_u, name='disp'), TrialFunction(V_u), TestFunction(V_u)
