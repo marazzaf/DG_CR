@@ -19,7 +19,7 @@ rank = comm.rank
 
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("test.xdmf") as infile:
+with XDMFFile("mesh.xdmf") as infile:
     infile.read(mesh)
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
@@ -28,7 +28,7 @@ ndim = mesh.topology().dim() # get number of space dimensions
 mu    = Constant(8)
 lmbda = Constant(12)
 Gc = Constant(5.4e-4)
-ell = Constant(2*cell_size) #Constant(0.03) Constant(2*cell_size)
+ell = Constant(0.03) #Constant(0.03) Constant(2*cell_size)
 
 boundaries = MeshFunction("size_t", mesh,1)
 boundaries.set_all(0)
@@ -42,7 +42,7 @@ bnd.mark(boundaries, 1)
 
 class Up(SubDomain):
     def inside(self, x, on_boundary):
-        return on_boundary and 4-cell_size < x[0] < 4+cell_size and 1 < x[1]
+        return on_boundary and 3.8 < x[0] < 4.2 and 1 < x[1]
 up = Up()
 up.mark(boundaries, 2)
 class Lower_left(SubDomain):
@@ -57,7 +57,7 @@ lower_right = Lower_right()
 lower_right.mark(boundaries, 4)
 class Crack(SubDomain):
     def inside(self, x, on_boundary):
-        return on_boundary and 3.8-cell_size/2 < x[0] < 4.2+cell_size/2 and x[1] < 0.41
+        return on_boundary and 3.8 < x[0] < 4 and x[1] < 0.41
 crack = Crack()
 crack.mark(boundaries, 5)
 
@@ -105,6 +105,8 @@ Gc_eff = Gc * (1 + cell_size/(ell*float(c_w)))
 V_u = VectorFunctionSpace(mesh, "DG", 1)
 if rank == 0:
     print('nb dof total: %i' % (V_u.dim()+V_alpha.dim()))
+    print(V_u.dim())
+sys.exit()
 
 # Define the function, test and trial fields
 u, du, v = Function(V_u, name='disp'), TrialFunction(V_u), TestFunction(V_u)
@@ -116,7 +118,7 @@ n = FacetNormal(mesh)
 hF = FacetArea(mesh)
 
 #Dirichlet BC on disp
-t_init = 0.01 #0.5
+t_init = 0.04 #0.5
 dt = 1e-3
 T = 6e-2
 u_D = Expression('-t', t=t_init, degree=1)
@@ -159,9 +161,10 @@ E_alpha_alpha = derivative(E_alpha,alpha,dalpha)
 
 # Damage
 bcalpha_0 = DirichletBC(V_alpha, Constant(0), boundaries, 1, method='geometric')
-bcalpha_1 = DirichletBC(V_alpha, Constant(0), boundaries, 2, method='geometric') #upper hole not cracked
-bcalpha_2 = DirichletBC(V_alpha, Constant(0), boundaries, 3, method='geometric') #lower hole not cracked
-bc_alpha = [bcalpha_0, bcalpha_1, bcalpha_2]
+bcalpha_1 = DirichletBC(V_alpha, Constant(0), boundaries, 2, method='geometric')
+bcalpha_2 = DirichletBC(V_alpha, Constant(0), boundaries, 3, method='geometric')
+bcalpha_3 = DirichletBC(V_alpha, Constant(0), boundaries, 4, method='geometric')
+bc_alpha = [bcalpha_0, bcalpha_1, bcalpha_2, bcalpha_3]
 
 class DamageProblem():
 

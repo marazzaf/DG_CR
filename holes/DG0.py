@@ -28,7 +28,7 @@ ndim = mesh.topology().dim() # get number of space dimensions
 mu    = Constant(2.45)
 lmbda = Constant(1.94)
 Gc = Constant(2.28e-3)
-ell = Constant(2*cell_size) #Constant(0.1) Constant(2*cell_size)
+ell = Constant(0.1) #Constant(0.1) Constant(2*cell_size)
 if rank == 0:
     print(float(ell))
 
@@ -98,6 +98,7 @@ Gc_eff = Gc * (1 + cell_size/(ell*float(c_w)))
 V_u = VectorFunctionSpace(mesh, "DG", 1)
 if rank == 0:
     print('nb dof total: %i' % (V_u.dim()+V_alpha.dim()))
+    print(V_u.dim())
 sys.exit()
 
 # Define the function, test and trial fields
@@ -110,9 +111,9 @@ n = FacetNormal(mesh)
 hF = FacetArea(mesh)
 
 #Dirichlet BC on disp
-t_init = 0.25 #0.5
+t_init = 0.4 #0.5
 dt = 1e-3
-T = 2
+T = 2.3
 u_D = Expression(('0.', 'x[1] > 0 ? t : 0'), t=t_init, degree=2)
 bcu_1 =  DirichletBC(V_u, u_D, boundaries, 2, method='geometric')
 bcu_2 =  DirichletBC(V_u, u_D, boundaries, 3, method='geometric')
