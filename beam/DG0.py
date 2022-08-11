@@ -280,7 +280,7 @@ def postprocessing(num,Nsteps):
     #Load with residual
     a = inner(b(alpha)*sigma_0(du), eps(v)) * dx - inner(dot(w_avg(du,alpha),n('+')), jump(v))*dS + inner(dot(w_avg(v,alpha),n('+')), jump(du))*dS + pen_value/h_avg * pen(alpha) * inner(jump(du), jump(v))*dS 
     residual = action(a, u)
-    bc = DirichletBC(V_u.sub(1), Constant(1.), boundaries, 2, method='geometric')
+    bc = DirichletBC(V_u.sub(1), Constant(-1.), boundaries, 2, method='geometric')
     bc.apply(v_reac.vector())
     load = assemble(action(residual, v_reac))
     
