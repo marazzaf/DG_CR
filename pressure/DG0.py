@@ -235,6 +235,7 @@ savedir = "DG"
 file_alpha = File(savedir+"/alpha.pvd")
 file_u = File(savedir+"/u.pvd")
 ld = open(savedir+'/ld.txt', 'w', 1)
+file_jump = File(savedir+"/jump.pvd")
 
 v_reac = Function(V_u)
 def postprocessing(num,Nsteps):
@@ -243,8 +244,14 @@ def postprocessing(num,Nsteps):
     file_alpha << (alpha,p.V)
     file_u << (u,p.V)
 
-    test = avg(alpha) * p * jump(u, n) * dS
-    print(assemble(test))
+    WW = VectorFunctionSpace(mesh, 'CR', 1)
+    test = sqrt(inner(jump(u), jump(u)))
+    img = plot(test)
+    plt.colorbar(img)
+    plt.show()
+    #truc = Function(WW)
+    #truc.vector()[:] = interpolate(test, WW).vector()
+    #file_jump << (truc, p.V)
 
 #Setting up solver in disp
 solver_u = PETSc.KSP()
@@ -271,6 +278,19 @@ alpha.vector().apply('insert')
 lb.vector()[:] = alpha.vector() #irreversibility
 lb.vector().apply('insert')
 
+def find_crack():
+    aux = alpha.vector().get_local()
+    crack = np.where(alpha.vector().get_local() > 0.95)
+    print(crack)
+
+    test = Function(V_alpha)
+    truc = np.zeros_like(aux)
+    truc[crack] = np.ones_like(crack)
+    test.vector()[:] = truc
+    img = plot(test)
+    plt.colorbar(img)
+    plt.show()
+
 #Setting up real bc in alpha
 for bc in bc_alpha:
     bc.apply(lb.vector())
@@ -278,7 +298,7 @@ for bc in bc_alpha:
     bc.apply(alpha.vector())
 
 #loop on rest of the problem
-t_init = V0/2-dt #3*V0-dt
+t_init = 0 #V0/2-dt #3*V0-dt
 load_steps = np.arange(t_init, T+dt, dt)
 N_steps = len(load_steps)
 
@@ -291,6 +311,9 @@ solver_alpha.solve(None, xv)
 alpha.vector()[:] = xv
 alpha.vector().apply('insert')
 file_alpha << (alpha,0)
+
+find_crack()
+sys.exit()
 
 for (i,t) in enumerate(load_steps):
     p.V = t
