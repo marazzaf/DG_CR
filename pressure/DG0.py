@@ -31,7 +31,7 @@ mu = Constant(0.5*E/(1+nu))
 lmbda = Constant(nu*E/(1-2*nu)/(1+nu))
 Gc = Constant(1)
 l0 = Constant(0.114)
-ell = Constant(2*cell_size)
+ell = Constant(cell_size)
 
 boundaries = MeshFunction("size_t", mesh,1)
 boundaries.set_all(0)
@@ -106,8 +106,8 @@ T = 5 * V0
 #p = Expression('2*E*Gc/pi/V', V=0, Gc=Gc, E=E, pi=np.pi, degree=2)
 p = Expression('p0*V', V=0, p0=float(p0), degree=1)
 u_D = Expression('F * x[1] / abs(x[1])', F = 1e-5, degree = 1)
-bcu_1 =  DirichletBC(V_u.sub(1), u_D, boundaries, 1, method='geometric')
-bcu_2 =  DirichletBC(V_u.sub(0), Constant(0), boundaries, 2, method='geometric')
+bcu_1 = DirichletBC(V_u, Constant((0,0)), boundaries, 1, method='geometric')
+bcu_2 = DirichletBC(V_u, Constant((0,0)), boundaries, 2, method='geometric')
 bc_u = [bcu_1, bcu_2]
 
 #Writing LHS for disp
@@ -200,7 +200,7 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
     # iteration loop
     while err_alpha>tol and iter<maxiter:
         #test
-        solve(LHS_bis() == RHS(), u, bcs=bc_u, solver_parameters={"linear_solver": "mumps"},)
+        solve(LHS_bis() == RHS(find_crack()), u, bcs=bc_u, solver_parameters={"linear_solver": "mumps"},)
 
         #solving damage problem
         xx = alpha.copy(deepcopy=True)
@@ -228,7 +228,10 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
         alpha_0.vector()[:] = alpha.vector()
         alpha_0.vector().apply('insert')
         iter=iter+1
-        assert iter < maxiter
+        try:
+            assert iter < maxiter
+        except AssertionError:
+            postprocessing()
     return (err_alpha, iter)
 
 savedir = "DG"
@@ -238,20 +241,15 @@ ld = open(savedir+'/ld.txt', 'w', 1)
 file_jump = File(savedir+"/jump.pvd")
 
 v_reac = Function(V_u)
-def postprocessing(num,Nsteps):
-    ## Dump solution to file
-    #if num % 10 == 0:
+def postprocessing():
     file_alpha << (alpha,p.V)
     file_u << (u,p.V)
 
-    WW = VectorFunctionSpace(mesh, 'CR', 1)
-    test = sqrt(inner(jump(u), jump(u)))
-    img = plot(test)
-    plt.colorbar(img)
-    plt.show()
-    #truc = Function(WW)
-    #truc.vector()[:] = interpolate(test, WW).vector()
-    #file_jump << (truc, p.V)
+    #WW = VectorFunctionSpace(mesh, 'CR', 1)
+    #test = sqrt(inner(jump(u), jump(u)))
+    #img = plot(test)
+    #plt.colorbar(img)
+    #plt.show()
 
 #Setting up solver in disp
 solver_u = PETSc.KSP()
@@ -268,8 +266,8 @@ def LHS_bis():
     LHS += pen_value/h_avg * pen(alpha) * inner(jump(du), jump(v))*dS
     return LHS
 
-def RHS():
-    return avg(alpha) * p * jump(v, n) * dS
+def RHS(aux):
+    return avg(aux) * p * jump(v, n) * dS
 
 #Put the initial crack in the domain
 test = Expression('abs(x[0]) < 0.8*l0 && abs(x[1]) < eps ? 1 : 0', l0=l0, eps=0.5*cell_size, degree = 1)
@@ -280,16 +278,15 @@ lb.vector().apply('insert')
 
 def find_crack():
     aux = alpha.vector().get_local()
-    crack = np.where(alpha.vector().get_local() > 0.95)
-    print(crack)
-
+    crack = np.where(alpha.vector().get_local() > 0.99)
     test = Function(V_alpha)
     truc = np.zeros_like(aux)
     truc[crack] = np.ones_like(crack)
     test.vector()[:] = truc
-    img = plot(test)
-    plt.colorbar(img)
-    plt.show()
+    #img = plot(test)
+    #plt.colorbar(img)
+    #plt.show()
+    return test
 
 #Setting up real bc in alpha
 for bc in bc_alpha:
@@ -298,7 +295,7 @@ for bc in bc_alpha:
     bc.apply(alpha.vector())
 
 #loop on rest of the problem
-t_init = 0 #V0/2-dt #3*V0-dt
+t_init = V0-dt #3*V0-dt
 load_steps = np.arange(t_init, T+dt, dt)
 N_steps = len(load_steps)
 
@@ -312,8 +309,8 @@ alpha.vector()[:] = xv
 alpha.vector().apply('insert')
 file_alpha << (alpha,0)
 
-find_crack()
-sys.exit()
+#find_crack()
+#sys.exit()
 
 for (i,t) in enumerate(load_steps):
     p.V = t
@@ -321,11 +318,11 @@ for (i,t) in enumerate(load_steps):
         print('Volume: %.2e' % p.V)
 
     # solve alternate minimization
-    alternate_minimization(u,alpha,maxiter=2000,tol=1e-4)
+    alternate_minimization(u,alpha,maxiter=100,tol=1e-4)
     
     # updating the lower bound to account for the irreversibility
     lb.vector()[:] = alpha.vector()
     lb.vector().apply('insert')
-    postprocessing(i,N_steps)
+    postprocessing()
 
 ld.close()
