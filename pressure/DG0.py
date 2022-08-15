@@ -19,7 +19,7 @@ rank = comm.rank
 
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("test.xdmf") as infile:
+with XDMFFile("mesh.xdmf") as infile:
     infile.read(mesh)
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
@@ -42,6 +42,11 @@ class Bnd(SubDomain):
         return on_boundary
 bnd = Bnd()
 bnd.mark(boundaries, 1)
+class LR(SubDomain):
+    def inside(self, x, on_boundary):
+        return on_boundary and (x[0] > 0.29 or x[0] < -0.29)
+lr = LR()
+lr.mark(boundaries, 2)
 
 #Space for the phase field
 V_alpha = FunctionSpace(mesh, 'CR', 1)
@@ -94,12 +99,16 @@ n = FacetNormal(mesh)
 hF = FacetArea(mesh)
 
 #Dirichlet BC on disp
-dt = 1e-3
-T = 6e-2
 V0 = 2 * sqrt(np.pi*Gc*l0**3/E)
-p = Expression('2*E*Gc/pi/V', V=0, Gc=Gc, E=E, pi=np.pi, degree=2)
-bcu_1 =  DirichletBC(V_u, Constant((0,0)), boundaries, 1, method='geometric')
-bc_u = [bcu_1]
+p0 = sqrt(Gc * E / np.pi / l0)
+dt = V0 / 10
+T = 5 * V0
+#p = Expression('2*E*Gc/pi/V', V=0, Gc=Gc, E=E, pi=np.pi, degree=2)
+p = Expression('p0*V', V=0, p0=float(p0), degree=1)
+u_D = Expression('F * x[1] / abs(x[1])', F = 1e-5, degree = 1)
+bcu_1 =  DirichletBC(V_u.sub(1), u_D, boundaries, 1, method='geometric')
+bcu_2 =  DirichletBC(V_u.sub(0), Constant(0), boundaries, 2, method='geometric')
+bc_u = [bcu_1, bcu_2]
 
 #Writing LHS for disp
 def b(alpha):
@@ -191,9 +200,7 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
     # iteration loop
     while err_alpha>tol and iter<maxiter:
         #test
-        aux = Constant(0) * v[0] * dx
-        #solve(LHS_bis() == aux, u, bcs=bc_u, solver_parameters={"linear_solver": "bicgstab", "preconditioner": "hypre_amg"},)
-        solve(LHS_bis() == aux, u, bcs=bc_u, solver_parameters={"linear_solver": "mumps"},)
+        solve(LHS_bis() == RHS(), u, bcs=bc_u, solver_parameters={"linear_solver": "mumps"},)
 
         #solving damage problem
         xx = alpha.copy(deepcopy=True)
@@ -236,15 +243,8 @@ def postprocessing(num,Nsteps):
     file_alpha << (alpha,p.V)
     file_u << (u,p.V)
 
-    #Load with residual
-    a = inner(b(alpha)*sigma_0(du), eps(v)) * dx - inner(dot(w_avg(du,alpha),n('+')), jump(v))*dS + inner(dot(w_avg(v,alpha),n('+')), jump(du))*dS + pen_value/h_avg * pen(alpha) * inner(jump(du), jump(v))*dS 
-    residual = action(a, u)
-    bc = DirichletBC(V_u.sub(1), Constant(-1.), boundaries, 2, method='geometric')
-    bc.apply(v_reac.vector())
-    load = assemble(action(residual, v_reac))
-    
-    if rank == 0:
-        ld.write('%.5e %.5e\n' % (u_D.t, load))
+    test = avg(alpha) * p * jump(u, n) * dS
+    print(assemble(test))
 
 #Setting up solver in disp
 solver_u = PETSc.KSP()
@@ -262,10 +262,7 @@ def LHS_bis():
     return LHS
 
 def RHS():
-    RHS = interpolate(Constant((0,0)), V_u).vector()
-    for bc in bc_u:
-        bc.apply(RHS)
-    return as_backend_type(RHS).vec()
+    return avg(alpha) * p * jump(v, n) * dS
 
 #Put the initial crack in the domain
 test = Expression('abs(x[0]) < 0.8*l0 && abs(x[1]) < eps ? 1 : 0', l0=l0, eps=0.5*cell_size, degree = 1)
@@ -281,9 +278,19 @@ for bc in bc_alpha:
     bc.apply(alpha.vector())
 
 #loop on rest of the problem
-t_init = 0
+t_init = V0/2-dt #3*V0-dt
 load_steps = np.arange(t_init, T+dt, dt)
 N_steps = len(load_steps)
+
+#Get phase-field right
+#solving damage problem
+solver_alpha.setVariableBounds(lb.vector().vec(),ub.vector().vec())
+xx = alpha.copy(deepcopy=True)
+xv = as_backend_type(xx.vector()).vec()
+solver_alpha.solve(None, xv)
+alpha.vector()[:] = xv
+alpha.vector().apply('insert')
+file_alpha << (alpha,0)
 
 for (i,t) in enumerate(load_steps):
     p.V = t
