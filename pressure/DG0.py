@@ -19,16 +19,19 @@ rank = comm.rank
 
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("mesh.xdmf") as infile:
+with XDMFFile("test.xdmf") as infile:
     infile.read(mesh)
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
 
 #material parameters
-mu    = Constant(8)
-lmbda = Constant(12)
-Gc = Constant(5.4e-4)
-ell = Constant(0.03) #Constant(0.03) Constant(2*cell_size)
+E = 1
+nu = 0
+mu = Constant(0.5*E/(1+nu))
+lmbda = Constant(nu*E/(1-2*nu)/(1+nu))
+Gc = Constant(1)
+l0 = Constant(0.114)
+ell = Constant(2*cell_size)
 
 boundaries = MeshFunction("size_t", mesh,1)
 boundaries.set_all(0)
@@ -40,34 +43,9 @@ class Bnd(SubDomain):
 bnd = Bnd()
 bnd.mark(boundaries, 1)
 
-class Up(SubDomain):
-    def inside(self, x, on_boundary):
-        return on_boundary and 3.8 < x[0] < 4.2 and 1 < x[1]
-up = Up()
-up.mark(boundaries, 2)
-class Lower_left(SubDomain):
-    def inside(self, x, on_boundary):
-        return on_boundary and x[0] < 0.2 and x[1] < 0.2
-lower_left = Lower_left()
-lower_left.mark(boundaries, 3)
-class Lower_right(SubDomain):
-    def inside(self, x, on_boundary):
-        return on_boundary and x[0] > 7.8 and x[1] < 0.2
-lower_right = Lower_right()
-lower_right.mark(boundaries, 4)
-class Crack(SubDomain):
-    def inside(self, x, on_boundary):
-        return on_boundary and 3.9 < x[0] < 4.1 and x[1] < 0.41
-crack = Crack()
-crack.mark(boundaries, 5)
-
-#To impose alpha=1 on crack
+#Space for the phase field
 V_alpha = FunctionSpace(mesh, 'CR', 1)
 V_beta = FunctionSpace(mesh, 'DG', 0) #for interpolation
-v = TestFunction(V_alpha)
-A = FacetArea(mesh)
-vec = assemble(v / A * ds(5)).get_local()
-nz = vec.nonzero()[0]
 
 metadata={"quadrature_degree": 0}
 def local_project(v,V):
@@ -116,14 +94,12 @@ n = FacetNormal(mesh)
 hF = FacetArea(mesh)
 
 #Dirichlet BC on disp
-t_init = 0.04 #0.5
 dt = 1e-3
 T = 6e-2
-u_D = Expression('-t', t=t_init, degree=1)
-bcu_1 =  DirichletBC(V_u.sub(1), u_D, boundaries, 2, method='geometric')
-bcu_2 =  DirichletBC(V_u, Constant((0,0)), boundaries, 3, method='geometric')
-bcu_3 =  DirichletBC(V_u.sub(1), Constant(0), boundaries, 4, method='geometric')
-bc_u = [bcu_1, bcu_2, bcu_3]
+V0 = 2 * sqrt(np.pi*Gc*l0**3/E)
+p = Expression('2*E*Gc/pi/V', V=0, Gc=Gc, E=E, pi=np.pi, degree=2)
+bcu_1 =  DirichletBC(V_u, Constant((0,0)), boundaries, 1, method='geometric')
+bc_u = [bcu_1]
 
 #Writing LHS for disp
 def b(alpha):
@@ -159,10 +135,7 @@ E_alpha_alpha = derivative(E_alpha,alpha,dalpha)
 
 # Damage
 bcalpha_0 = DirichletBC(V_alpha, Constant(0), boundaries, 1, method='geometric')
-bcalpha_1 = DirichletBC(V_alpha, Constant(0), boundaries, 2, method='geometric')
-bcalpha_2 = DirichletBC(V_alpha, Constant(0), boundaries, 3, method='geometric')
-bcalpha_3 = DirichletBC(V_alpha, Constant(0), boundaries, 4, method='geometric')
-bc_alpha = [bcalpha_0, bcalpha_1, bcalpha_2, bcalpha_3]
+bc_alpha = [bcalpha_0]
 
 class DamageProblem():
 
@@ -221,20 +194,6 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
         aux = Constant(0) * v[0] * dx
         #solve(LHS_bis() == aux, u, bcs=bc_u, solver_parameters={"linear_solver": "bicgstab", "preconditioner": "hypre_amg"},)
         solve(LHS_bis() == aux, u, bcs=bc_u, solver_parameters={"linear_solver": "mumps"},)
-        
-        ## solve elastic problem
-        #solver_u.setOperators(LHS())
-        #XX = u.copy(deepcopy=True)
-        #XV = as_backend_type(XX.vector()).vec()
-        #solver_u.solve(RHS(),XV)
-        #try:
-        #    assert solver_u.getConvergedReason() > 0
-        #except AssertionError:
-        #    if rank == 0:
-        #        print('Error on solver u: %i' % solver_u.getConvergedReason())
-        #    sys.exit()
-        #u.vector()[:] = XV
-        #u.vector().apply('insert')
 
         #solving damage problem
         xx = alpha.copy(deepcopy=True)
@@ -274,8 +233,8 @@ v_reac = Function(V_u)
 def postprocessing(num,Nsteps):
     ## Dump solution to file
     #if num % 10 == 0:
-    file_alpha << (alpha,u_D.t)
-    file_u << (u,u_D.t)
+    file_alpha << (alpha,p.V)
+    file_u << (u,p.V)
 
     #Load with residual
     a = inner(b(alpha)*sigma_0(du), eps(v)) * dx - inner(dot(w_avg(du,alpha),n('+')), jump(v))*dS + inner(dot(w_avg(v,alpha),n('+')), jump(du))*dS + pen_value/h_avg * pen(alpha) * inner(jump(du), jump(v))*dS 
@@ -302,26 +261,15 @@ def LHS_bis():
     LHS += pen_value/h_avg * pen(alpha) * inner(jump(du), jump(v))*dS
     return LHS
 
-def LHS():
-    LHS = inner(b(alpha)*sigma_0(du), eps(v)) * dx
-    LHS += -inner(dot(w_avg(du,alpha),n('+')), jump(v))*dS + inner(dot(w_avg(v,alpha),n('+')), jump(du))*dS
-    LHS += pen_value/h_avg * pen(alpha) * inner(jump(du), jump(v))*dS
-    #return LHS
-    LHS = assemble(LHS)
-    for bc in bc_u:
-        bc.apply(LHS)
-    return as_backend_type(LHS).mat()
-
 def RHS():
     RHS = interpolate(Constant((0,0)), V_u).vector()
     for bc in bc_u:
         bc.apply(RHS)
     return as_backend_type(RHS).vec()
 
-#Starting with crack lips already broken
-aux = np.zeros_like(alpha.vector().get_local())
-aux[nz] = np.ones_like(nz)
-alpha.vector().set_local(aux)
+#Put the initial crack in the domain
+test = Expression('abs(x[0]) < 0.8*l0 && abs(x[1]) < eps ? 1 : 0', l0=l0, eps=0.5*cell_size, degree = 1)
+alpha.vector()[:] = interpolate(test, V_alpha).vector()
 alpha.vector().apply('insert')
 lb.vector()[:] = alpha.vector() #irreversibility
 lb.vector().apply('insert')
@@ -333,13 +281,14 @@ for bc in bc_alpha:
     bc.apply(alpha.vector())
 
 #loop on rest of the problem
+t_init = 0
 load_steps = np.arange(t_init, T+dt, dt)
 N_steps = len(load_steps)
 
 for (i,t) in enumerate(load_steps):
-    u_D.t = t
+    p.V = t
     if rank == 0:
-        print('Time: %.2e' % u_D.t)
+        print('Volume: %.2e' % p.V)
 
     # solve alternate minimization
     alternate_minimization(u,alpha,maxiter=2000,tol=1e-4)
