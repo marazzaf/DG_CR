@@ -103,9 +103,9 @@ V0 = 2 * sqrt(np.pi*Gc*l0**3/E)
 p0 = sqrt(Gc * E / np.pi / l0)
 dt = V0 / 10
 T = 5 * V0
-#p = Expression('2*E*Gc/pi/V', V=0, Gc=Gc, E=E, pi=np.pi, degree=2)
-p = Expression('p0*V', V=0, p0=float(p0), degree=1)
-u_D = Expression('F * x[1] / abs(x[1])', F = 1, degree = 1)
+p = Expression('V > V0 ? pow(2*E*Gc/pi/V,0.33) : p0*V/V0', V=0, p0=float(p0), V0=float(V0), Gc=Gc, E=E, pi=np.pi, degree=2)
+#p = Expression('p0*V', V=0, p0=float(p0), degree=1)
+#u_D = Expression('F * x[1] / abs(x[1])', F = 1, degree = 1)
 bcu_1 = DirichletBC(V_u, Constant((0,0)), boundaries, 1, method='geometric')
 bcu_2 = DirichletBC(V_u, Constant((0,0)), boundaries, 2, method='geometric')
 bc_u = [bcu_1, bcu_2]
@@ -202,7 +202,7 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
         #test
         solve(LHS() == RHS(find_crack()), u, bcs=bc_u, solver_parameters={"linear_solver": "mumps"},)
         #solve(LHS(), u.vector(), RHS(find_crack()), 'mumps')
-        break
+        #break
 
         #solving damage problem
         xx = alpha.copy(deepcopy=True)
@@ -233,7 +233,7 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
         try:
             assert iter < maxiter
         except AssertionError:
-            postprocessing()
+            print('Max num it reached!')
     return (err_alpha, iter)
 
 savedir = "DG"
@@ -247,10 +247,10 @@ def postprocessing():
     file_alpha << (alpha,p.V)
     file_u << (u,p.V)
 
-    img = plot(u)
-    plt.colorbar(img)
-    plt.show()
-    sys.exit()
+    #img = plot(u)
+    #plt.colorbar(img)
+    #plt.show()
+    ##sys.exit()
 
 #Setting up solver in disp
 solver_u = PETSc.KSP()
@@ -272,18 +272,8 @@ def LHS():
     return LHS
 
 def RHS(crack):
-    return -avg(crack) * p * jump(v, n) * dS
-    #x = SpatialCoordinate(mesh)
-    #truc = Expression(('0', 'abs(x[0]) < 0.4*l0 && abs(x[1]) < eps ? 1 : 0'), eps=0.01*cell_size, l0=l0, degree=1)
-    #res = interpolate(truc, V_u).vector()
-    ##How can I cahnge that by something on the phase-field?
-
-    #aux = assemble(-p * jump(v, n) * dS)
-    #test = aux * res
-    #test = assemble(-avg(crack) * p * jump(v, n) * dS)
-    #for bc in bc_u:
-    #    bc.apply(test)
-    #return test
+    #return -avg(crack) * p * jump(v, n) * dS
+    return -avg(alpha) * p * jump(v, n) * dS
 
 #Put the initial crack in the domain
 test = Expression('abs(x[0]) < 0.4*l0 && abs(x[1]) < eps ? 1 : 0', l0=l0, eps=0.01*cell_size, degree = 1)
@@ -311,7 +301,7 @@ for bc in bc_alpha:
     bc.apply(alpha.vector())
 
 #loop on rest of the problem
-t_init = V0-dt #3*V0-dt
+t_init = V0/10 #3*V0/4-dt #3*V0-dt
 load_steps = np.arange(t_init, T+dt, dt)
 N_steps = len(load_steps)
 
@@ -331,10 +321,10 @@ file_alpha << (alpha,0)
 for (i,t) in enumerate(load_steps):
     p.V = t
     if rank == 0:
-        print('Volume: %.2e' % p.V)
+        print('Volume fraction: %.2e' % (p.V/V0))
 
     # solve alternate minimization
-    alternate_minimization(u,alpha,maxiter=100,tol=1e-4)
+    alternate_minimization(u,alpha,maxiter=25,tol=1e-4)
     
     # updating the lower bound to account for the irreversibility
     lb.vector()[:] = alpha.vector()
