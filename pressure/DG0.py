@@ -200,8 +200,8 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
     # iteration loop
     while err_alpha>tol and iter<maxiter:
         #test
-        #solve(LHS() == RHS(find_crack()), u, bcs=bc_u, solver_parameters={"linear_solver": "mumps"},)
-        solve(LHS(), u.vector(), RHS(), 'mumps')
+        solve(LHS() == RHS(find_crack()), u, bcs=bc_u, solver_parameters={"linear_solver": "mumps"},)
+        #solve(LHS(), u.vector(), RHS(find_crack()), 'mumps')
         break
 
         #solving damage problem
@@ -265,35 +265,25 @@ def LHS():
     LHS = inner(b(alpha)*sigma_0(du), eps(v)) * dx
     LHS += -inner(dot(w_avg(du,alpha),n('+')), jump(v))*dS + inner(dot(w_avg(v,alpha),n('+')), jump(du))*dS
     LHS += pen_value/h_avg * pen(alpha) * inner(jump(du), jump(v))*dS
-    res = assemble(LHS)
-    for bc in bc_u:
-        bc.apply(res)
-    return res
-    #return LHS
+    #res = assemble(LHS)
+    #for bc in bc_u:
+    #    bc.apply(res)
+    #return res
+    return LHS
 
-def RHS():
-    x = SpatialCoordinate(mesh)
-    truc = Expression(('0', 'abs(x[0]) < 0.4*l0 && abs(x[1]) < eps ? 1 : 0'), eps=0.01*cell_size, l0=l0, degree=1)
-    res = interpolate(truc, V_u).vector()
-    #How can I cahnge that by something on the phase-field?
+def RHS(crack):
+    return -avg(crack) * p * jump(v, n) * dS
+    #x = SpatialCoordinate(mesh)
+    #truc = Expression(('0', 'abs(x[0]) < 0.4*l0 && abs(x[1]) < eps ? 1 : 0'), eps=0.01*cell_size, l0=l0, degree=1)
+    #res = interpolate(truc, V_u).vector()
+    ##How can I cahnge that by something on the phase-field?
 
-    aux = assemble(-p * jump(v, n) * dS)
-    test = aux * res
-    for bc in bc_u:
-        bc.apply(test)
-    return test
-    
-    #vec = assemble(p * v('+')[1] * x[1]/abs(x[1]+1e-5) * dS).get_local()
-    #print(vec.shape())
-    #print(vec.shape())
-    #truc = aux *  vec
-    #func = Function(V_alpha)
-    #truc = np.zeros_like(truc)
-    #func.vector()[:] = truc
-    #return func.vector()
-    ##return avg(aux) * p * v('+')[1] * x[1]/abs(x[1]+1e-5) * dS
-    ##return -avg(aux) * p * jump(v, n) * dS
-    ##return p * jump(v, n) * dS
+    #aux = assemble(-p * jump(v, n) * dS)
+    #test = aux * res
+    #test = assemble(-avg(crack) * p * jump(v, n) * dS)
+    #for bc in bc_u:
+    #    bc.apply(test)
+    #return test
 
 #Put the initial crack in the domain
 test = Expression('abs(x[0]) < 0.4*l0 && abs(x[1]) < eps ? 1 : 0', l0=l0, eps=0.01*cell_size, degree = 1)
