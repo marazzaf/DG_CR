@@ -204,21 +204,21 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
         solve(LHS(), u.vector(), RHS(), 'mumps')
         break
 
-        ##solving damage problem
-        #xx = alpha.copy(deepcopy=True)
-        #xv = as_backend_type(xx.vector()).vec()
-        #solver_alpha.solve(None, xv)
-        #try:
-        #    assert solver_alpha.getConvergedReason() > 0
-        #except AssertionError:
-        #    if rank == 0:
-        #        print('Error on solver alpha: %i' % solver_alpha.getConvergedReason())
-        #    sys.exit()
-        #alpha.vector()[:] = xv
-        #alpha.vector().apply('insert')
-        #alpha_error.vector()[:] = alpha.vector() - alpha_0.vector()
-        #alpha_error.vector().apply('insert')
-        #err_alpha = norm(alpha_error.vector(),"linf")
+        #solving damage problem
+        xx = alpha.copy(deepcopy=True)
+        xv = as_backend_type(xx.vector()).vec()
+        solver_alpha.solve(None, xv)
+        try:
+            assert solver_alpha.getConvergedReason() > 0
+        except AssertionError:
+            if rank == 0:
+                print('Error on solver alpha: %i' % solver_alpha.getConvergedReason())
+            sys.exit()
+        alpha.vector()[:] = xv
+        alpha.vector().apply('insert')
+        alpha_error.vector()[:] = alpha.vector() - alpha_0.vector()
+        alpha_error.vector().apply('insert')
+        err_alpha = norm(alpha_error.vector(),"linf")
         
         #monitor the results
         elastic_en = assemble(elastic_energy)
@@ -250,11 +250,6 @@ def postprocessing():
     img = plot(u)
     plt.colorbar(img)
     plt.show()
-
-    #test = sqrt(inner(jump(u), jump(u)))
-    #img = plot(test)
-    #plt.colorbar(img)
-    #plt.show()
     sys.exit()
 
 #Setting up solver in disp
@@ -280,6 +275,7 @@ def RHS():
     x = SpatialCoordinate(mesh)
     truc = Expression(('0', 'abs(x[0]) < 0.4*l0 && abs(x[1]) < eps ? 1 : 0'), eps=0.01*cell_size, l0=l0, degree=1)
     res = interpolate(truc, V_u).vector()
+    #How can I cahnge that by something on the phase-field?
 
     aux = assemble(-p * jump(v, n) * dS)
     test = aux * res
@@ -325,7 +321,7 @@ for bc in bc_alpha:
     bc.apply(alpha.vector())
 
 #loop on rest of the problem
-t_init = 3*V0-dt #3*V0-dt
+t_init = V0-dt #3*V0-dt
 load_steps = np.arange(t_init, T+dt, dt)
 N_steps = len(load_steps)
 
