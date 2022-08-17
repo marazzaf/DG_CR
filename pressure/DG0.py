@@ -132,7 +132,9 @@ def pen(alpha):
 pen_value = 2*mu
 dissipated_energy = Gc/float(c_w)*(w(alpha)/ell + ell*dot(grad(alpha), grad(alpha)))*dx
 elastic_energy = 0.5*inner(sigma(u,alpha), eps(u)) * dx
-total_energy = elastic_energy + dissipated_energy
+aux = conditional(lt(avg(alpha), Constant(0.99)), Constant(0), avg(alpha))
+source = -aux * p * jump(u, n) * dS
+total_energy = elastic_energy + dissipated_energy - source
 #Associated bilinear form
 elastic = derivative(elastic_energy,u,v)
 elastic = replace(elastic,{u:du})
@@ -247,10 +249,10 @@ def postprocessing():
     file_alpha << (alpha,p.V)
     file_u << (u,p.V)
 
-    #img = plot(u)
-    #plt.colorbar(img)
-    #plt.show()
-    ##sys.exit()
+    img = plot(u)
+    plt.colorbar(img)
+    plt.show()
+    #sys.exit()
 
 #Setting up solver in disp
 solver_u = PETSc.KSP()
@@ -272,8 +274,9 @@ def LHS():
     return LHS
 
 def RHS(crack):
-    #return -avg(crack) * p * jump(v, n) * dS
-    return -avg(alpha) * p * jump(v, n) * dS
+    aux = conditional(lt(avg(alpha), Constant(0.95)), Constant(0), avg(alpha))
+    return -aux * p * jump(v, n) * dS
+    #return -avg(alpha) * p * jump(v, n) * dS
 
 #Put the initial crack in the domain
 test = Expression('abs(x[0]) < 0.4*l0 && abs(x[1]) < eps ? 1 : 0', l0=l0, eps=0.01*cell_size, degree = 1)
