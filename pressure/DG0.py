@@ -132,8 +132,9 @@ def pen(alpha):
 pen_value = 2*mu
 dissipated_energy = Gc/float(c_w)*(w(alpha)/ell + ell*dot(grad(alpha), grad(alpha)))*dx
 elastic_energy = 0.5*inner(sigma(u,alpha), eps(u)) * dx
-aux = conditional(lt(avg(alpha), Constant(0.99)), Constant(0), avg(alpha))
-source = -aux * p * jump(u, n) * dS
+#aux = conditional(lt(avg(alpha), Constant(0.99)), Constant(0), avg(alpha))
+#source = -aux**2 * p * jump(u, n) * dS
+source = -avg(alpha)**10 * p * jump(u, n) * dS
 total_energy = elastic_energy + dissipated_energy - source
 #Associated bilinear form
 elastic = derivative(elastic_energy,u,v)
@@ -179,8 +180,8 @@ bb = Function(V_alpha).vector()
 solver_alpha.setFunction(pb_alpha.F, bb.vec())
 A = PETScMatrix()
 solver_alpha.setJacobian(pb_alpha.J, A.mat())
-solver_alpha.getKSP().setType('cg')
-solver_alpha.getKSP().getPC().setType('hypre') #'bjacobi' #'lu'
+solver_alpha.getKSP().setType('preonly') #cg
+solver_alpha.getKSP().getPC().setType('lu') #'hypre'
 solver_alpha.getKSP().setTolerances(rtol=1e-6, atol=1e-8, max_it=4000) #rtol=1e-8
 solver_alpha.getKSP().setFromOptions()
 solver_alpha.setFromOptions()
@@ -274,9 +275,9 @@ def LHS():
     return LHS
 
 def RHS(crack):
-    aux = conditional(lt(avg(alpha), Constant(0.95)), Constant(0), avg(alpha))
-    return -aux * p * jump(v, n) * dS
-    #return -avg(alpha) * p * jump(v, n) * dS
+    #aux = conditional(lt(avg(alpha), Constant(0.95)), Constant(0), avg(alpha))
+    #return -aux**2 * p * jump(v, n) * dS
+    return -avg(alpha)**10 * p * jump(v, n) * dS
 
 #Put the initial crack in the domain
 test = Expression('abs(x[0]) < 0.4*l0 && abs(x[1]) < eps ? 1 : 0', l0=l0, eps=0.01*cell_size, degree = 1)
