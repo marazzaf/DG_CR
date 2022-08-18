@@ -103,9 +103,6 @@ V0 = 2 * sqrt(np.pi*Gc*l0**3/E)
 p0 = sqrt(Gc * E / np.pi / l0)
 dt = V0 / 10
 T = 5 * V0
-p = Expression('V > V0 ? pow(2*E*Gc/pi/V,0.33) : p0*V/V0', V=0, p0=float(p0), V0=float(V0), Gc=Gc, E=E, pi=np.pi, degree=2)
-#p = Expression('p0*V', V=0, p0=float(p0), degree=1)
-#u_D = Expression('F * x[1] / abs(x[1])', F = 1, degree = 1)
 bcu_1 = DirichletBC(V_u, Constant((0,0)), boundaries, 1, method='geometric')
 bcu_2 = DirichletBC(V_u, Constant((0,0)), boundaries, 2, method='geometric')
 bc_u = [bcu_1, bcu_2]
@@ -134,8 +131,9 @@ dissipated_energy = Gc/float(c_w)*(w(alpha)/ell + ell*dot(grad(alpha), grad(alph
 elastic_energy = 0.5*inner(sigma(u,alpha), eps(u)) * dx
 #aux = conditional(lt(avg(alpha), Constant(0.99)), Constant(0), avg(alpha))
 #source = -aux**2 * p * jump(u, n) * dS
-source = -avg(alpha)**10 * p * jump(u, n) * dS
-total_energy = elastic_energy + dissipated_energy - source
+#p = Expression('p', p=0, degree=1)
+#source = -avg(alpha)**2 * jump(u, n) * dS
+total_energy = elastic_energy + dissipated_energy# - source
 #Associated bilinear form
 elastic = derivative(elastic_energy,u,v)
 elastic = replace(elastic,{u:du})
@@ -195,17 +193,24 @@ for bc in bc_alpha:
     bc.apply(ub.vector())
     bc.apply(alpha.vector())
 
-def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Constant("0.0"), V_alpha)):
+def alternate_minimization(vol,u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Constant("0.0"), V_alpha)):
     # initialization
     iter = 1; err_alpha = 1
     alpha_error = Function(V_alpha)
     solver_alpha.setVariableBounds(lb.vector().vec(),ub.vector().vec())
     # iteration loop
     while err_alpha>tol and iter<maxiter:
-        #test
-        solve(LHS() == RHS(find_crack()), u, bcs=bc_u, solver_parameters={"linear_solver": "mumps"},)
-        #solve(LHS(), u.vector(), RHS(find_crack()), 'mumps')
+        #Compute disp à p=1
+        solve(LHS() == RHS(), u, bcs=bc_u, solver_parameters={"linear_solver": "mumps"},)
         #break
+
+        #compute pressure
+        approx_vol = - inner(u, grad(alpha)) * dx
+        p = vol / assemble(approx_vol)
+        print(float(p/p0))
+
+        #new disp
+        u.vector()[:] = p * u.vector()
 
         #solving damage problem
         xx = alpha.copy(deepcopy=True)
@@ -246,9 +251,9 @@ ld = open(savedir+'/ld.txt', 'w', 1)
 file_jump = File(savedir+"/jump.pvd")
 
 v_reac = Function(V_u)
-def postprocessing():
-    file_alpha << (alpha,p.V)
-    file_u << (u,p.V)
+def postprocessing(V):
+    file_alpha << (alpha,V)
+    file_u << (u,V)
 
     img = plot(u)
     plt.colorbar(img)
@@ -274,10 +279,11 @@ def LHS():
     #return res
     return LHS
 
-def RHS(crack):
+def RHS(): #crack):
     #aux = conditional(lt(avg(alpha), Constant(0.95)), Constant(0), avg(alpha))
-    #return -aux**2 * p * jump(v, n) * dS
-    return -avg(alpha)**10 * p * jump(v, n) * dS
+    #return -aux**2 * jump(v, n) * dS
+    #return -avg(alpha)**2 * jump(v, n) * dS
+    return -inner(v, grad(alpha)) * dx
 
 #Put the initial crack in the domain
 test = Expression('abs(x[0]) < 0.4*l0 && abs(x[1]) < eps ? 1 : 0', l0=l0, eps=0.01*cell_size, degree = 1)
@@ -322,17 +328,16 @@ file_alpha << (alpha,0)
 #find_crack()
 #sys.exit()
 
-for (i,t) in enumerate(load_steps):
-    p.V = t
+for (i,V) in enumerate(load_steps):
     if rank == 0:
-        print('Volume fraction: %.2e' % (p.V/V0))
+        print('Volume fraction: %.2e' % (V/V0))
 
     # solve alternate minimization
-    alternate_minimization(u,alpha,maxiter=25,tol=1e-4)
+    alternate_minimization(V,u,alpha,maxiter=100,tol=1e-4)
     
     # updating the lower bound to account for the irreversibility
     lb.vector()[:] = alpha.vector()
     lb.vector().apply('insert')
-    postprocessing()
+    postprocessing(V)
 
 ld.close()
