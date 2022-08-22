@@ -85,7 +85,7 @@ c_w = 4*sympy.integrate(sympy.sqrt(w(z)),(z,0,1))
 Gc_eff = Gc * (1 + cell_size/(ell*float(c_w)))
 
 # Create function space for 2D elasticity + Damage
-V_u = VectorFunctionSpace(mesh, "DG", 1)
+V_u = VectorFunctionSpace(mesh, "CG", 1)
 if rank == 0:
     print('nb dof total: %i' % (V_u.dim()+V_alpha.dim()))
 
@@ -106,24 +106,6 @@ T = 5 * V0
 bcu_1 = DirichletBC(V_u, Constant((0,0)), boundaries, 1, method='geometric')
 bcu_2 = DirichletBC(V_u, Constant((0,0)), boundaries, 2, method='geometric')
 bc_u = [bcu_1, bcu_2]
-
-#Writing LHS for disp
-def b(alpha):
-    test = Expression('pow(1-alpha,2)+k', degree = 2, alpha=alpha, k=Constant(1.e-6))
-    return interpolate(test, V_beta) #V_alpha #V_beta
-
-def w_avg(disp,dam):
-    sig = sigma_0(disp)
-    lumped = b(dam)
-    prod = lumped * sig
-    tot = lumped('+')+lumped('-')
-    w1 = lumped('+') / tot
-    w2 = lumped('-') / tot
-    return w1*prod('+') + w2*prod('-')
-
-def pen(alpha):
-    lumped = b(alpha)
-    return 2*lumped('+')*lumped('-') / (lumped('+')+lumped('-'))
 
 #Energies
 pen_value = 2*mu
@@ -246,7 +228,7 @@ def alternate_minimization(vol,u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate
             print('Max num it reached!')
     return (err_alpha, iter)
 
-savedir = "DG"
+savedir = "CG"
 file_alpha = File(savedir+"/alpha.pvd")
 file_u = File(savedir+"/u.pvd")
 ld = open(savedir+'/ld.txt', 'w', 1)
@@ -266,25 +248,16 @@ def postprocessing(V):
 solver_u = PETSc.KSP()
 solver_u.create(comm)
 #PETScOptions.set("ksp_monitor")
-solver_u.setType('preonly')
-solver_u.getPC().setType('lu') #try it? #'lu'
+solver_u.setType('cg')
+solver_u.getPC().setType('hypre') #try it? #'lu'
 solver_u.setTolerances(rtol=1e-5,atol=1e-8,max_it=1000) #rtol=1e-5,max_it=2000 #rtol=1e-3
 solver_u.setFromOptions()
 
 def LHS():
-    LHS = inner(b(alpha)*sigma_0(du), eps(v)) * dx
-    LHS += -inner(dot(w_avg(du,alpha),n('+')), jump(v))*dS + inner(dot(w_avg(v,alpha),n('+')), jump(du))*dS
-    LHS += pen_value/h_avg * pen(alpha) * inner(jump(du), jump(v))*dS
-    #res = assemble(LHS)
-    #for bc in bc_u:
-    #    bc.apply(res)
-    #return res
+    LHS = inner(a(alpha)*sigma_0(du), eps(v)) * dx
     return LHS
 
-def RHS(): #crack):
-    #aux = conditional(lt(avg(alpha), Constant(0.95)), Constant(0), avg(alpha))
-    #return -aux**2 * jump(v, n) * dS
-    #return -avg(alpha)**2 * jump(v, n) * dS
+def RHS():
     return -inner(v, grad(alpha)) * dx
 
 #Put the initial crack in the domain
