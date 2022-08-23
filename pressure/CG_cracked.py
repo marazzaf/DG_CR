@@ -44,7 +44,7 @@ bnd = Bnd()
 bnd.mark(boundaries, 1)
 class Crack(SubDomain):
     def inside(self, x, on_boundary):
-        return on_boundary and abs(x[0]) < float(l0) and abs(x[1]) < 0.01
+        return on_boundary and abs(x[0]) < 0.5*float(l0) and abs(x[1]) < 0.01
 crack = Crack()
 crack.mark(boundaries, 2)
 
@@ -85,6 +85,7 @@ h = CellDiameter(mesh)
 h_avg = 0.5 * (h('+') + h('-'))
 n = FacetNormal(mesh)
 hF = FacetArea(mesh)
+x = SpatialCoordinate(mesh)
 
 #Dirichlet BC on disp
 V0 = 2 * sqrt(np.pi*Gc*l0**3/E)
@@ -171,13 +172,14 @@ def alternate_minimization(vol,u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate
         #break
 
         #compute pressure
-        approx_vol = inner(u, n) * ds(2)
+        approx_vol = -inner(u, n) * ds(2)
+        approx_vol = u[1] * sign(x[1])  * ds(2)
         print('vol: %.2e' % assemble(approx_vol))
-        print('ref vol: %.2e' % vol)
-        print('disp: %.2e' % u(0,1e-3)[1])
+        #print('ref vol: %.2e' % vol)
         break
+        print('disp: %.2e' % u(0,1e-3)[1])
         p = vol / assemble(approx_vol)
-        print(float(p/p0))
+        print(float(p))
         
 
         #new disp
@@ -241,8 +243,7 @@ solver_u.setTolerances(rtol=1e-5,atol=1e-8,max_it=1000) #rtol=1e-5,max_it=2000 #
 solver_u.setFromOptions()
 
 def LHS():
-    LHS = inner(sigma(du,alpha), eps(v)) * dx
-    return LHS
+    return inner(sigma(du,alpha), eps(v)) * dx
 
 def RHS():
     return -inner(v, n) * ds(2)

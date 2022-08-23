@@ -190,12 +190,12 @@ def alternate_minimization(vol,u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate
         #compute pressure
         approx_vol = - inner(u, grad(alpha)) * dx
         print('vol: %.2e' % assemble(approx_vol))
+        break
         print('ref vol: %.2e' % vol)
         print('disp: %.2e' % u(0,1e-3)[1])
         print('ref: %.2e' % float(2*l0))
-        break
         p = vol / assemble(approx_vol)
-        print(float(p/p0))
+        print(float(p))
         
 
         #new disp
@@ -237,12 +237,15 @@ savedir = "CG"
 file_alpha = File(savedir+"/alpha.pvd")
 file_u = File(savedir+"/u.pvd")
 ld = open(savedir+'/ld.txt', 'w', 1)
-file_jump = File(savedir+"/jump.pvd")
+file_ref = File(savedir+"/ref.pvd")
 
 v_reac = Function(V_u)
 def postprocessing(V):
     file_alpha << (alpha,V)
     file_u << (u,V)
+    x = SpatialCoordinate(mesh)
+    ref = interpolate(Expression('x[1]*fabs(x[1]+1e-5)*2*sqrt(l0*l0-x[0]*x[0])', l0=l0, degree=2), V_alpha)
+    file_ref << (ref, V)
 
     #img = plot(u)
     #plt.colorbar(img)
