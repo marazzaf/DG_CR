@@ -19,7 +19,7 @@ rank = comm.rank
 
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("cracked.xdmf") as infile:
+with XDMFFile("cracked_2.xdmf") as infile:
     infile.read(mesh)
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
@@ -39,12 +39,12 @@ ds = Measure("ds",subdomain_data=boundaries)
 
 class Bnd(SubDomain):
     def inside(self, x, on_boundary):
-        return on_boundary
+        return on_boundary# and x[0] > 0.275 and x[1] > 0.075
 bnd = Bnd()
 bnd.mark(boundaries, 1)
 class Crack(SubDomain):
     def inside(self, x, on_boundary):
-        return on_boundary and abs(x[0]) < 0.5*float(l0) and abs(x[1]) < 0.01
+        return on_boundary and abs(x[0]) < float(l0) and abs(x[1]) < 0.05
 crack = Crack()
 crack.mark(boundaries, 2)
 
@@ -172,10 +172,12 @@ def alternate_minimization(vol,u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate
         #break
 
         #compute pressure
-        approx_vol = -inner(u, n) * ds(2)
-        #approx_vol = u[1] * sign(x[1])  * ds(2)
+        #approx_vol = -inner(u, n) * ds(2)
+        approx_vol = 2*u[1] * sign(x[1])  * ds(2)
         print('vol: %.2e' % assemble(approx_vol))
         #print('ref vol: %.2e' % vol)
+        ref = pi * l0 * u.vector().get_local().max()
+        print('ref vol: %.2e' % float(ref))
         break
         print('disp: %.2e' % u(0,1e-3)[1])
         p = vol / assemble(approx_vol)
