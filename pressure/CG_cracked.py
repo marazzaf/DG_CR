@@ -111,7 +111,7 @@ E_alpha_alpha = derivative(E_alpha,alpha,dalpha)
 
 # Damage
 bcalpha_0 = DirichletBC(V_alpha, Constant(0), boundaries, 1, method='geometric')
-bcalpha_1 = DirichletBC(V_alpha, Constant(1), boundaries, 2, method='geometric')
+bcalpha_1 = DirichletBC(V_alpha, Constant(0), boundaries, 2, method='geometric')
 bc_alpha = [bcalpha_0, bcalpha_1]
 
 class DamageProblem():
@@ -173,7 +173,7 @@ def alternate_minimization(vol,u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate
 
         #compute pressure
         approx_vol = -inner(u, n) * ds(2)
-        approx_vol = u[1] * sign(x[1])  * ds(2)
+        #approx_vol = u[1] * sign(x[1])  * ds(2)
         print('vol: %.2e' % assemble(approx_vol))
         #print('ref vol: %.2e' % vol)
         break

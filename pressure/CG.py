@@ -190,8 +190,8 @@ def alternate_minimization(vol,u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate
         #compute pressure
         approx_vol = - inner(u, grad(alpha)) * dx
         print('vol: %.2e' % assemble(approx_vol))
+        print('ref vol: %.2e' % float(1/p0*V0))
         break
-        print('ref vol: %.2e' % vol)
         print('disp: %.2e' % u(0,1e-3)[1])
         print('ref: %.2e' % float(2*l0))
         p = vol / assemble(approx_vol)
