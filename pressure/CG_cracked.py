@@ -19,7 +19,7 @@ rank = comm.rank
 
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("mesh.xdmf") as infile:
+with XDMFFile("cracked.xdmf") as infile:
     infile.read(mesh)
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
@@ -42,27 +42,15 @@ class Bnd(SubDomain):
         return on_boundary
 bnd = Bnd()
 bnd.mark(boundaries, 1)
-class LR(SubDomain):
+class Crack(SubDomain):
     def inside(self, x, on_boundary):
-        return on_boundary and (x[0] > 0.29 or x[0] < -0.29)
-lr = LR()
-lr.mark(boundaries, 2)
+        return on_boundary and abs(x[0]) < float(l0) and abs(x[1]) < 0.01
+crack = Crack()
+crack.mark(boundaries, 2)
 
 #Space for the phase field
 V_alpha = FunctionSpace(mesh, 'CR', 1)
 V_beta = FunctionSpace(mesh, 'DG', 0) #for interpolation
-
-metadata={"quadrature_degree": 0}
-def local_project(v,V):
-    dv = TrialFunction(V)
-    v_ = TestFunction(V)
-    a_proj = inner(dv,v_)*dx(metadata=metadata)
-    b_proj = inner(v,v_)*dx(metadata=metadata)
-    solver = LocalSolver(a_proj,b_proj)
-    solver.factorize()
-    u = Function(V)
-    solver.solve_local_rhs(u)
-    return u
 
 def w(alpha):
     return alpha
@@ -104,19 +92,13 @@ p0 = sqrt(Gc * E / np.pi / l0)
 dt = V0 / 10
 T = 5 * V0
 bcu_1 = DirichletBC(V_u, Constant((0,0)), boundaries, 1, method='geometric')
-bcu_2 = DirichletBC(V_u, Constant((0,0)), boundaries, 2, method='geometric')
-bc_u = [bcu_1, bcu_2]
+bc_u = [bcu_1]
 
 #Energies
 pen_value = 2*mu
 dissipated_energy = Gc/float(c_w)*(w(alpha)/ell + ell*dot(grad(alpha), grad(alpha)))*dx
 elastic_energy = 0.5*inner(sigma(u,alpha), eps(u)) * dx
-#aux = conditional(lt(avg(alpha), Constant(0.99)), Constant(0), avg(alpha))
-#source = -aux**2 * p * jump(u, n) * dS
-#p = Expression('p', p=0, degree=1)
-#source = -avg(alpha)**2 * jump(u, n) * dS
-source = - inner(u, grad(alpha)) * dx
-total_energy = elastic_energy + dissipated_energy - source
+total_energy = elastic_energy + dissipated_energy
 #Associated bilinear form
 elastic = derivative(elastic_energy,u,v)
 elastic = replace(elastic,{u:du})
@@ -128,7 +110,8 @@ E_alpha_alpha = derivative(E_alpha,alpha,dalpha)
 
 # Damage
 bcalpha_0 = DirichletBC(V_alpha, Constant(0), boundaries, 1, method='geometric')
-bc_alpha = [bcalpha_0]
+bcalpha_1 = DirichletBC(V_alpha, Constant(1), boundaries, 2, method='geometric')
+bc_alpha = [bcalpha_0, bcalpha_1]
 
 class DamageProblem():
 
@@ -188,11 +171,10 @@ def alternate_minimization(vol,u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate
         #break
 
         #compute pressure
-        approx_vol = - inner(u, grad(alpha)) * dx
+        approx_vol = inner(u, n) * ds(2)
         print('vol: %.2e' % assemble(approx_vol))
         print('ref vol: %.2e' % vol)
         print('disp: %.2e' % u(0,1e-3)[1])
-        print('ref: %.2e' % float(2*l0))
         break
         p = vol / assemble(approx_vol)
         print(float(p/p0))
@@ -233,7 +215,7 @@ def alternate_minimization(vol,u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate
             print('Max num it reached!')
     return (err_alpha, iter)
 
-savedir = "CG"
+savedir = "CG_cracked"
 file_alpha = File(savedir+"/alpha.pvd")
 file_u = File(savedir+"/u.pvd")
 ld = open(savedir+'/ld.txt', 'w', 1)
@@ -259,30 +241,11 @@ solver_u.setTolerances(rtol=1e-5,atol=1e-8,max_it=1000) #rtol=1e-5,max_it=2000 #
 solver_u.setFromOptions()
 
 def LHS():
-    LHS = inner(a(alpha)*sigma_0(du), eps(v)) * dx
+    LHS = inner(sigma(du,alpha), eps(v)) * dx
     return LHS
 
 def RHS():
-    return -inner(v, grad(alpha)) * dx
-
-#Put the initial crack in the domain
-test = Expression('abs(x[0]) < 0.5*l0 && abs(x[1]) < eps ? 1 : 0', l0=l0, eps=0.01*cell_size, degree = 1)
-alpha.vector()[:] = interpolate(test, V_alpha).vector()
-alpha.vector().apply('insert')
-lb.vector()[:] = alpha.vector() #irreversibility
-lb.vector().apply('insert')
-
-def find_crack():
-    aux = alpha.vector().get_local()
-    crack = np.where(alpha.vector().get_local() > 0.99)
-    test = Function(V_alpha)
-    truc = np.zeros_like(aux)
-    truc[crack] = np.ones_like(crack)
-    test.vector()[:] = truc
-    #img = plot(test)
-    #plt.colorbar(img)
-    #plt.show()
-    return test
+    return -inner(v, n) * ds(2)
 
 #Setting up real bc in alpha
 for bc in bc_alpha:
