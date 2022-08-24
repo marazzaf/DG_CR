@@ -21,7 +21,7 @@ rank = comm.rank
 mesh = Mesh()
 with XDMFFile("mesh_2.xdmf") as infile:
     infile.read(mesh)
-cell_size = 1.5e-3
+cell_size = 2.5e-3
 ndim = mesh.topology().dim() # get number of space dimensions
 
 #material parameters
@@ -133,7 +133,7 @@ elastic_energy = 0.5*inner(sigma(u,alpha), eps(u)) * dx
 #source = -aux**2 * p * jump(u, n) * dS
 #p = Expression('p', p=0, degree=1)
 source = -avg(alpha)**2 * jump(u, n) * dS
-source = - inner(u, grad(alpha)) * dx
+#source = - inner(u, grad(alpha)) * dx
 total_energy = elastic_energy + dissipated_energy - source
 #Associated bilinear form
 elastic = derivative(elastic_energy,u,v)
@@ -206,7 +206,8 @@ def alternate_minimization(vol,u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate
         #break
 
         #compute pressure
-        approx_vol = -avg(alpha)**2 * jump(u, n) * dS
+        #approx_vol = -avg(alpha)**2 * jump(u, n) * dS
+        approx_vol = - 2*inner(u, grad(alpha)) * dx
         if rank == 0:
             print('vol: %.2e' % assemble(approx_vol))
         l = find_crack()
@@ -291,7 +292,7 @@ def LHS():
     return LHS
 
 def RHS(): #crack):
-    #aux = conditional(lt(avg(alpha), Constant(0.95)), Constant(0), avg(alpha))
+    aux = conditional(lt(avg(alpha), Constant(0.95)), Constant(0), avg(alpha))
     #return -aux**2 * jump(v, n) * dS
     return -avg(alpha)**2 * jump(v, n) * dS
     #return -inner(v, grad(alpha)) * dx
