@@ -21,7 +21,7 @@ rank = comm.rank
 mesh = Mesh()
 with XDMFFile("mesh.xdmf") as infile:
     infile.read(mesh)
-cell_size = 1e-3 #mesh.hmax()
+cell_size = 0.5e-3 #mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
 
 #material parameters
@@ -184,7 +184,9 @@ def alternate_minimization(vol,u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate
         #compute pressure
         approx_vol = - 2*inner(u, grad(alpha)) * dx
         print('vol: %.2e' % assemble(approx_vol))
-        ref = pi * 0.8*l0 * u.vector().get_local().max()
+        l = find_crack()
+        print(l)
+        ref = pi * l * u.vector().get_local().max()
         print('ref vol: %.2e' % float(ref))
         break
         print('disp: %.2e' % u(0,1e-3)[1])
@@ -260,23 +262,29 @@ def RHS():
     return -inner(v, grad(alpha)) * dx
 
 #Put the initial crack in the domain
-test = Expression('abs(x[0]) < 0.4*l0 && abs(x[1]) < eps ? 1 : 0', l0=l0, eps=0.5*cell_size, degree = 1)
+test = Expression('abs(x[0]) < 0.5*l0 && abs(x[1]) < eps ? 1 : 0', l0=l0, eps=0.5*cell_size, degree = 1)
 alpha.vector()[:] = interpolate(test, V_alpha).vector()
 alpha.vector().apply('insert')
 lb.vector()[:] = alpha.vector() #irreversibility
 lb.vector().apply('insert')
 
+#to get crack tip coordinates
+xcoor = V_alpha.tabulate_dof_coordinates()
+xcoor = xcoor[:,0]
+
 def find_crack():
     aux = alpha.vector().get_local()
-    crack = np.where(alpha.vector().get_local() > 0.99)
-    test = Function(V_alpha)
-    truc = np.zeros_like(aux)
-    truc[crack] = np.ones_like(crack)
-    test.vector()[:] = truc
-    #img = plot(test)
-    #plt.colorbar(img)
-    #plt.show()
-    return test
+    ind = alpha.vector().get_local() > 0.8
+    xmax = xcoor[ind].max()
+    xmin = xcoor[ind].min()
+    return xmax-xmin
+
+    #crack = np.where(alpha.vector().get_local() > 0.8)
+    #test = Function(V_alpha)
+    #truc = np.zeros_like(aux)
+    #truc[crack] = np.ones_like(crack)
+    #test.vector()[:] = truc
+    #return test
 
 #Setting up real bc in alpha
 for bc in bc_alpha:
