@@ -21,7 +21,7 @@ rank = comm.rank
 mesh = Mesh()
 with XDMFFile("mesh.xdmf") as infile:
     infile.read(mesh)
-cell_size = mesh.hmax()
+cell_size = 1e-3 #mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
 
 #material parameters
@@ -31,7 +31,7 @@ mu = Constant(0.5*E/(1+nu))
 lmbda = Constant(nu*E/(1-2*nu)/(1+nu))
 Gc = Constant(1)
 l0 = Constant(0.114)
-ell = Constant(2*cell_size)
+ell = Constant(3*cell_size)
 
 boundaries = MeshFunction("size_t", mesh,1)
 boundaries.set_all(0)
@@ -42,11 +42,6 @@ class Bnd(SubDomain):
         return on_boundary
 bnd = Bnd()
 bnd.mark(boundaries, 1)
-class LR(SubDomain):
-    def inside(self, x, on_boundary):
-        return on_boundary and (x[0] > 0.29 or x[0] < -0.29)
-lr = LR()
-lr.mark(boundaries, 2)
 
 #Space for the phase field
 V_alpha = FunctionSpace(mesh, 'CR', 1)
@@ -104,8 +99,7 @@ p0 = sqrt(Gc * E / np.pi / l0)
 dt = V0 / 10
 T = 5 * V0
 bcu_1 = DirichletBC(V_u, Constant((0,0)), boundaries, 1, method='geometric')
-bcu_2 = DirichletBC(V_u, Constant((0,0)), boundaries, 2, method='geometric')
-bc_u = [bcu_1, bcu_2]
+bc_u = [bcu_1]
 
 #Energies
 pen_value = 2*mu
@@ -188,9 +182,10 @@ def alternate_minimization(vol,u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate
         #break
 
         #compute pressure
-        approx_vol = - inner(u, grad(alpha)) * dx
+        approx_vol = - 2*inner(u, grad(alpha)) * dx
         print('vol: %.2e' % assemble(approx_vol))
-        print('ref vol: %.2e' % float(1/p0*V0))
+        ref = pi * 0.8*l0 * u.vector().get_local().max()
+        print('ref vol: %.2e' % float(ref))
         break
         print('disp: %.2e' % u(0,1e-3)[1])
         print('ref: %.2e' % float(2*l0))
@@ -243,10 +238,6 @@ v_reac = Function(V_u)
 def postprocessing(V):
     file_alpha << (alpha,V)
     file_u << (u,V)
-    x = SpatialCoordinate(mesh)
-    ref = interpolate(Expression('x[1]*fabs(x[1]+1e-5)*2*sqrt(l0*l0-x[0]*x[0])', l0=l0, degree=2), V_alpha)
-    file_ref << (ref, V)
-
     #img = plot(u)
     #plt.colorbar(img)
     #plt.show()
@@ -269,7 +260,7 @@ def RHS():
     return -inner(v, grad(alpha)) * dx
 
 #Put the initial crack in the domain
-test = Expression('abs(x[0]) < 0.5*l0 && abs(x[1]) < eps ? 1 : 0', l0=l0, eps=0.01*cell_size, degree = 1)
+test = Expression('abs(x[0]) < 0.4*l0 && abs(x[1]) < eps ? 1 : 0', l0=l0, eps=0.5*cell_size, degree = 1)
 alpha.vector()[:] = interpolate(test, V_alpha).vector()
 alpha.vector().apply('insert')
 lb.vector()[:] = alpha.vector() #irreversibility
