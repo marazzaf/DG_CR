@@ -188,11 +188,11 @@ def alternate_minimization(vol,u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate
         print(l)
         ref = pi * l * u.vector().get_local().max()
         print('ref vol: %.2e' % float(ref))
-        break
-        print('disp: %.2e' % u(0,1e-3)[1])
-        print('ref: %.2e' % float(2*l0))
+        #break
+        #print('disp: %.2e' % u(0,1e-3)[1])
+        #print('ref: %.2e' % float(2*l0))
         p = vol / assemble(approx_vol)
-        print(float(p))
+        #print(float(p))
         
 
         #new disp
@@ -321,6 +321,5 @@ for (i,V) in enumerate(load_steps):
     lb.vector()[:] = alpha.vector()
     lb.vector().apply('insert')
     postprocessing(V)
-    break
 
 ld.close()

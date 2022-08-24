@@ -19,9 +19,9 @@ rank = comm.rank
 
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("mesh.xdmf") as infile:
+with XDMFFile("mesh_2.xdmf") as infile:
     infile.read(mesh)
-cell_size = mesh.hmax()
+cell_size = 1.5e-3
 ndim = mesh.topology().dim() # get number of space dimensions
 
 #material parameters
@@ -132,7 +132,7 @@ elastic_energy = 0.5*inner(sigma(u,alpha), eps(u)) * dx
 #aux = conditional(lt(avg(alpha), Constant(0.99)), Constant(0), avg(alpha))
 #source = -aux**2 * p * jump(u, n) * dS
 #p = Expression('p', p=0, degree=1)
-#source = -avg(alpha)**2 * jump(u, n) * dS
+source = -avg(alpha)**2 * jump(u, n) * dS
 source = - inner(u, grad(alpha)) * dx
 total_energy = elastic_energy + dissipated_energy - source
 #Associated bilinear form
@@ -206,7 +206,16 @@ def alternate_minimization(vol,u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate
         #break
 
         #compute pressure
-        approx_vol = - inner(u, grad(alpha)) * dx
+        approx_vol = -avg(alpha)**2 * jump(u, n) * dS
+        if rank == 0:
+            print('vol: %.2e' % assemble(approx_vol))
+        l = find_crack()
+        if rank == 0:
+            print(l)
+        ref = -pi * l * u(0,1e-3)[1]
+        if rank == 0:
+            print('ref vol: %.2e' % float(ref))
+        break
         p = vol / assemble(approx_vol)
         print(float(p/p0))
         
@@ -262,14 +271,14 @@ def postprocessing(V):
     #plt.show()
     ##sys.exit()
 
-#Setting up solver in disp
-solver_u = PETSc.KSP()
-solver_u.create(comm)
-#PETScOptions.set("ksp_monitor")
-solver_u.setType('preonly')
-solver_u.getPC().setType('lu') #try it? #'lu'
-solver_u.setTolerances(rtol=1e-5,atol=1e-8,max_it=1000) #rtol=1e-5,max_it=2000 #rtol=1e-3
-solver_u.setFromOptions()
+##Setting up solver in disp
+#solver_u = PETSc.KSP()
+#solver_u.create(comm)
+##PETScOptions.set("ksp_monitor")
+#solver_u.setType('preonly')
+#solver_u.getPC().setType('lu') #try it? #'lu'
+#solver_u.setTolerances(rtol=1e-5,atol=1e-8,max_it=1000) #rtol=1e-5,max_it=2000 #rtol=1e-3
+#solver_u.setFromOptions()
 
 def LHS():
     LHS = inner(b(alpha)*sigma_0(du), eps(v)) * dx
@@ -284,27 +293,28 @@ def LHS():
 def RHS(): #crack):
     #aux = conditional(lt(avg(alpha), Constant(0.95)), Constant(0), avg(alpha))
     #return -aux**2 * jump(v, n) * dS
-    #return -avg(alpha)**2 * jump(v, n) * dS
-    return -inner(v, grad(alpha)) * dx
+    return -avg(alpha)**2 * jump(v, n) * dS
+    #return -inner(v, grad(alpha)) * dx
 
 #Put the initial crack in the domain
-test = Expression('abs(x[0]) < 0.4*l0 && abs(x[1]) < eps ? 1 : 0', l0=l0, eps=0.01*cell_size, degree = 1)
+test = Expression('abs(x[0]) < 0.5*l0 && abs(x[1]) < eps ? 1 : 0', l0=l0, eps=0.5*cell_size, degree = 1)
 alpha.vector()[:] = interpolate(test, V_alpha).vector()
 alpha.vector().apply('insert')
 lb.vector()[:] = alpha.vector() #irreversibility
 lb.vector().apply('insert')
 
+#to get crack tip coordinates
+xcoor = V_alpha.tabulate_dof_coordinates()
+xcoor = xcoor[:,0]
+
 def find_crack():
     aux = alpha.vector().get_local()
-    crack = np.where(alpha.vector().get_local() > 0.99)
-    test = Function(V_alpha)
-    truc = np.zeros_like(aux)
-    truc[crack] = np.ones_like(crack)
-    test.vector()[:] = truc
-    #img = plot(test)
-    #plt.colorbar(img)
-    #plt.show()
-    return test
+    ind = alpha.vector().get_local() > 0.8
+    xmax = xcoor[ind].max()
+    xmax = MPI.max(comm, xmax)
+    xmin = xcoor[ind].min()
+    xmin = MPI.min(comm, xmin)
+    return xmax-xmin
 
 #Setting up real bc in alpha
 for bc in bc_alpha:
@@ -341,5 +351,6 @@ for (i,V) in enumerate(load_steps):
     lb.vector()[:] = alpha.vector()
     lb.vector().apply('insert')
     postprocessing(V)
+    break
 
 ld.close()
