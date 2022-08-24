@@ -52,18 +52,6 @@ lr.mark(boundaries, 2)
 V_alpha = FunctionSpace(mesh, 'CR', 1)
 V_beta = FunctionSpace(mesh, 'DG', 0) #for interpolation
 
-metadata={"quadrature_degree": 0}
-def local_project(v,V):
-    dv = TrialFunction(V)
-    v_ = TestFunction(V)
-    a_proj = inner(dv,v_)*dx(metadata=metadata)
-    b_proj = inner(v,v_)*dx(metadata=metadata)
-    solver = LocalSolver(a_proj,b_proj)
-    solver.factorize()
-    u = Function(V)
-    solver.solve_local_rhs(u)
-    return u
-
 def w(alpha):
     return alpha
 
@@ -132,8 +120,8 @@ elastic_energy = 0.5*inner(sigma(u,alpha), eps(u)) * dx
 #aux = conditional(lt(avg(alpha), Constant(0.99)), Constant(0), avg(alpha))
 #source = -aux**2 * p * jump(u, n) * dS
 #p = Expression('p', p=0, degree=1)
-source = -avg(alpha)**2 * jump(u, n) * dS
-#source = - inner(u, grad(alpha)) * dx
+#source = -avg(alpha)**2 * jump(u, n) * dS
+source = - inner(u, grad(alpha)) * dx
 total_energy = elastic_energy + dissipated_energy - source
 #Associated bilinear form
 elastic = derivative(elastic_energy,u,v)
@@ -202,8 +190,8 @@ def alternate_minimization(vol,u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate
     # iteration loop
     while err_alpha>tol and iter<maxiter:
         #Compute disp à p=1
-        #solve(LHS() == RHS(), u, bcs=bc_u, solver_parameters={"linear_solver": "mumps"})
-        solve(LHS() == RHS(), u, bcs=bc_u, solver_parameters={"linear_solver": "gmres", "preconditioner": "hypre_amg"}) #, "report": True})
+        solve(LHS() == RHS(), u, bcs=bc_u, solver_parameters={"linear_solver": "mumps"})
+        #solve(LHS() == RHS(), u, bcs=bc_u, solver_parameters={"linear_solver": "gmres", "preconditioner": "hypre_amg"}) #, "report": True})
 
         #compute pressure
         #approx_vol = -avg(alpha)**2 * jump(u, n) * dS
@@ -213,14 +201,13 @@ def alternate_minimization(vol,u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate
         l = find_crack()
         if rank == 0:
             print(l)
-        ref = -pi * l * u(0,0.5e-3)[1]
+        ref = pi * l * u(0,0.5e-3)[1]
         if rank == 0:
             print('ref vol: %.2e' % float(ref))
-        break
+        #break
         p = vol / assemble(approx_vol)
-        print(float(p/p0))
+        #print(float(p/p0))
         
-
         #new disp
         u.vector()[:] = p * u.vector()
 
@@ -292,10 +279,10 @@ def LHS():
     return LHS
 
 def RHS(): #crack):
-    aux = conditional(lt(avg(alpha), Constant(0.95)), Constant(0), avg(alpha))
+    #aux = conditional(lt(avg(alpha), Constant(0.95)), Constant(0), avg(alpha))
     #return -aux**2 * jump(v, n) * dS
-    return -avg(alpha)**2 * jump(v, n) * dS
-    #return -inner(v, grad(alpha)) * dx
+    #return -avg(alpha)**2 * jump(v, n) * dS
+    return -inner(v, grad(alpha)) * dx
 
 #Put the initial crack in the domain
 test = Expression('abs(x[0]) < 0.5*l0 && abs(x[1]) < eps ? 1 : 0', l0=l0, eps=0.5*cell_size, degree = 1)
@@ -351,6 +338,6 @@ for (i,V) in enumerate(load_steps):
     lb.vector()[:] = alpha.vector()
     lb.vector().apply('insert')
     postprocessing(V)
-    break
+    #break
 
 ld.close()
