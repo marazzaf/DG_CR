@@ -204,7 +204,7 @@ def alternate_minimization(vol,u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate
         ref = pi * l * u(0,0.5e-3)[1]
         if rank == 0:
             print('ref vol: %.2e' % float(ref))
-        #break
+        break
         p = vol / assemble(approx_vol)
         #print(float(p/p0))
         
@@ -279,10 +279,11 @@ def LHS():
     return LHS
 
 def RHS(): #crack):
-    #aux = conditional(lt(avg(alpha), Constant(0.95)), Constant(0), avg(alpha))
-    #return -aux**2 * jump(v, n) * dS
+    aux = conditional(lt(avg(alpha), Constant(0.95)), Constant(0), avg(alpha))
+    return aux**2 * jump(v, n) * dS
     #return -avg(alpha)**2 * jump(v, n) * dS
-    return -inner(v, grad(alpha)) * dx
+    #return -inner(v, grad(alpha)) * dx
+    #return jump(v, n) * dS
 
 #Put the initial crack in the domain
 test = Expression('abs(x[0]) < 0.5*l0 && abs(x[1]) < eps ? 1 : 0', l0=l0, eps=0.5*cell_size, degree = 1)
@@ -338,6 +339,6 @@ for (i,V) in enumerate(load_steps):
     lb.vector()[:] = alpha.vector()
     lb.vector().apply('insert')
     postprocessing(V)
-    #break
+    break
 
 ld.close()
