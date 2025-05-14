@@ -3,7 +3,7 @@ W = 8; //Longeur selon x
 H = 2; //Longuer selon y
 l0 = 0.4; //Size initial crack
 delta = 0.2; // initil opening	
-h = 0.05; //1.5e-3; //2e-3 //Taille du maillage
+h = 2e-2; //0.05; //1.5e-3; //2e-3 //Taille du maillage
 
 //Plate
 Point(1) = {0,0,0,h};

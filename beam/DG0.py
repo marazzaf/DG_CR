@@ -19,7 +19,7 @@ rank = comm.rank
 
 #Gmsh mesh. Already cracked
 mesh = Mesh()
-with XDMFFile("mesh.xdmf") as infile:
+with XDMFFile("test.xdmf") as infile:
     infile.read(mesh)
 cell_size = mesh.hmax()
 ndim = mesh.topology().dim() # get number of space dimensions
@@ -33,6 +33,8 @@ ell = Constant(0.03) #Constant(0.03) Constant(2*cell_size)
 boundaries = MeshFunction("size_t", mesh,1)
 boundaries.set_all(0)
 ds = Measure("ds",subdomain_data=boundaries)
+cells_meshfunction = MeshFunction("size_t", mesh, 2)
+dxx = dx(subdomain_data=cells_meshfunction)
 
 class Bnd(SubDomain):
     def inside(self, x, on_boundary):
@@ -118,7 +120,7 @@ hF = FacetArea(mesh)
 #Dirichlet BC on disp
 t_init = 0.04 #0.5
 dt = 1e-3
-T = 6e-2
+T = 1 #6e-2
 u_D = Expression('-t', t=t_init, degree=1)
 bcu_1 =  DirichletBC(V_u.sub(1), u_D, boundaries, 2, method='geometric')
 bcu_2 =  DirichletBC(V_u, Constant((0,0)), boundaries, 3, method='geometric')
@@ -221,20 +223,6 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
         aux = Constant(0) * v[0] * dx
         #solve(LHS_bis() == aux, u, bcs=bc_u, solver_parameters={"linear_solver": "bicgstab", "preconditioner": "hypre_amg"},)
         solve(LHS_bis() == aux, u, bcs=bc_u, solver_parameters={"linear_solver": "mumps"},)
-        
-        ## solve elastic problem
-        #solver_u.setOperators(LHS())
-        #XX = u.copy(deepcopy=True)
-        #XV = as_backend_type(XX.vector()).vec()
-        #solver_u.solve(RHS(),XV)
-        #try:
-        #    assert solver_u.getConvergedReason() > 0
-        #except AssertionError:
-        #    if rank == 0:
-        #        print('Error on solver u: %i' % solver_u.getConvergedReason())
-        #    sys.exit()
-        #u.vector()[:] = XV
-        #u.vector().apply('insert')
 
         #solving damage problem
         xx = alpha.copy(deepcopy=True)
@@ -265,10 +253,98 @@ def alternate_minimization(u,alpha,tol=1.e-5,maxiter=100,alpha_0=interpolate(Con
         assert iter < maxiter
     return (err_alpha, iter)
 
+
+#To get the Gh
+V_theta = VectorFunctionSpace(mesh, "CG", 1)
+theta = Function(V_theta, name="Theta")
+theta_trial = TrialFunction(V_theta)
+theta_test = TestFunction(V_theta)
+
+#to get crack tip coordinates
+xcoor = V_alpha.tabulate_dof_coordinates()
+xcoor = xcoor[:,1]
+
+def find_crack_tip():
+    # Estimate the current crack tip
+    ind = alpha.vector().get_local() > 0.5
+    
+    if ind.any():
+        xmax = xcoor[ind].max()
+    else:
+        xmax = 0.0
+    x0 = MPI.max(comm, xmax)
+
+    return [x0, 0]
+
+solver_theta = PETSc.KSP()
+solver_theta.create(comm)
+solver_theta.setType('cg')
+solver_theta.getPC().setType('hypre')
+solver_theta.setTolerances(rtol=1e-5)
+solver_theta.setFromOptions()
+
+def calc_theta(pos_crack_tip=[0., 0.]):
+    #How to determine the crack tip? Barycentre of last facet for which alpha = 1?
+    x0 = pos_crack_tip[0]  # x-coordinate of the crack tip
+    y0 = pos_crack_tip[1]  # y-coordinate
+    r = 2 * float(ell) #from Li article
+    R = 5 * float(ell)
+
+    def neartip(x, on_boundary):
+        dist = sqrt((x[0]-x0)**2 + (x[1]-y0)**2)
+        return dist < r
+
+    def outside(x, on_boundary):
+        dist = sqrt((x[0]-x0)**2 + (x[1]-y0)**2)
+        return dist > R
+
+    class bigcircle(SubDomain):
+        def inside(self, x, on_boundary):
+            dist = sqrt((x[0]-x0)**2 + (x[1]-y0)**2)
+            return dist < 1.1*R
+
+    bigcircle().mark(cells_meshfunction, 1)
+
+    bc1 = DirichletBC(V_theta, Constant([1.0, 0.0]), neartip)
+    bc2 = DirichletBC(V_theta, Constant([0.0, 0.0]), outside)
+    bcs = [bc1, bc2]
+    a = inner(grad(theta_trial), grad(theta_test))*dx
+    L = inner(Constant([0.0, 0.0]), theta_test)*dx
+
+    #petsc4py
+    a = assemble(a)
+    TT,b = as_backend_type(a).mat().getVecs()
+    L = assemble(L)
+    for bc in bcs:
+        bc.apply(a)
+        bc.apply(L)
+    solver_theta.setOperators(as_backend_type(a).mat())
+    solver_theta.solve(as_backend_type(L).vec(),TT)
+    assert solver_theta.getConvergedReason() > 0
+    theta.vector()[:] = TT
+    theta.vector().apply('insert')
+
+def calc_gtheta():
+    sig = sigma(u,alpha)
+    psi = 0.5 * inner(sig, grad(u))
+
+    # Static and dynamic energy release rates
+    Gstat = (inner(sig, dot(grad(u), grad(theta))) - psi*div(theta)) * dxx(1)
+
+    # Damage dissipation rate
+    q = 6*Gc*ell/8*grad(alpha)  # only for AT1!
+    Gamma = (Gc/float(c_w)*(w(alpha)/ell + ell*dot(grad(alpha), grad(alpha))))*div(theta) - inner(q, grad(theta)*grad(alpha))
+
+    Gstat_value = assemble(Gstat)
+    Gamma_value = assemble(Gamma*dxx(1))
+    return Gstat_value,Gamma_value
+
+
 savedir = "DG"
 file_alpha = File(savedir+"/alpha.pvd")
 file_u = File(savedir+"/u.pvd")
 ld = open(savedir+'/ld.txt', 'w', 1)
+en_rel = open(savedir+'/G.txt', 'w', 1)
 
 v_reac = Function(V_u)
 def postprocessing(num,Nsteps):
@@ -276,6 +352,13 @@ def postprocessing(num,Nsteps):
     #if num % 10 == 0:
     file_alpha << (alpha,u_D.t)
     file_u << (u,u_D.t)
+
+    #G
+    pos = find_crack_tip()
+    calc_theta(pos)
+    res = calc_gtheta()
+    if rank == 0:
+        en_rel.write('%.3e %.5e %.5e\n' % (u_D.t, res[0], res[1]))
 
     #Load with residual
     a = inner(b(alpha)*sigma_0(du), eps(v)) * dx - inner(dot(w_avg(du,alpha),n('+')), jump(v))*dS + inner(dot(w_avg(v,alpha),n('+')), jump(du))*dS + pen_value/h_avg * pen(alpha) * inner(jump(du), jump(v))*dS 
